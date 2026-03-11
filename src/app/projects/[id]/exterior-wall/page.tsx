@@ -125,24 +125,26 @@ export default function ExteriorWallPage() {
   const [currentStep, setCurrentStep] = useState(1);
 
   // Step1: 横幅
-  const [widths, setWidths] = useState<FaceWidth[]>(DEMO_WIDTHS.map(w => ({ ...w })));
+  const [widths, setWidths] = useState<FaceWidth[]>([]);
   const [widthsLoading, setWidthsLoading] = useState(false);
+  const [widthsDetected, setWidthsDetected] = useState(false);
   const [widthsConfirmed, setWidthsConfirmed] = useState(false);
 
   // Step2: 窓情報
-  const [faceWindows, setFaceWindows] = useState<FaceWindows[]>(
-    DEMO_WINDOWS.map(fw => ({ ...fw, windows: fw.windows.map(w => ({ ...w })) }))
-  );
+  const [faceWindows, setFaceWindows] = useState<FaceWindows[]>([]);
   const [windowsLoading, setWindowsLoading] = useState(false);
+  const [windowsDetected, setWindowsDetected] = useState(false);
   const [windowsConfirmed, setWindowsConfirmed] = useState(false);
 
   // Step3: 立面図寸法
-  const [heights, setHeights] = useState<HeightData>({ ...DEMO_HEIGHTS });
+  const [heights, setHeights] = useState<HeightData>({ maxHeight: 0, eaveHeight: 0, flToEave: 0 });
   const [heightsLoading, setHeightsLoading] = useState(false);
+  const [heightsDetected, setHeightsDetected] = useState(false);
   const [heightsConfirmed, setHeightsConfirmed] = useState(false);
 
   // Step4: セグメンテーション
   const [segLoading, setSegLoading] = useState(false);
+  const [segDone, setSegDone] = useState(false);
   const [segConfirmed, setSegConfirmed] = useState(false);
 
   // Step5: 面積
@@ -165,6 +167,7 @@ export default function ExteriorWallPage() {
   const runWidthDetection = () => {
     simulateAI(setWidthsLoading, () => {
       setWidths(DEMO_WIDTHS.map(w => ({ ...w })));
+      setWidthsDetected(true);
     });
   };
 
@@ -175,6 +178,7 @@ export default function ExteriorWallPage() {
         ...fw,
         windows: fw.windows.map(w => ({ ...w, id: uid() })),
       })));
+      setWindowsDetected(true);
     });
   };
 
@@ -182,13 +186,14 @@ export default function ExteriorWallPage() {
   const runHeightDetection = () => {
     simulateAI(setHeightsLoading, () => {
       setHeights({ ...DEMO_HEIGHTS });
+      setHeightsDetected(true);
     });
   };
 
   // Step4: セグメンテーション
   const runSegmentation = () => {
     simulateAI(setSegLoading, () => {
-      setSegConfirmed(true);
+      setSegDone(true);
     }, 2000);
   };
 
@@ -304,7 +309,7 @@ export default function ExteriorWallPage() {
                            (step.id === 2 && windowsConfirmed) ||
                            (step.id === 3 && heightsConfirmed) ||
                            (step.id === 4 && segConfirmed) ||
-                           (step.id === 5 && results.length > 0);
+                           (step.id === 5 && saved);
             return (
               <div key={step.id} className="flex items-center flex-1">
                 <button
@@ -349,13 +354,16 @@ export default function ExteriorWallPage() {
               <p className="text-xs text-gray-500 mb-4">平面図をAI解析し、建物の各方角の横幅（mm）を抽出します。</p>
               <button
                 onClick={runWidthDetection}
-                disabled={widthsLoading}
+                disabled={widthsLoading || widthsDetected}
                 className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {widthsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '平面図を解析'}
+                {widthsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> :
+                 widthsDetected ? <><CheckCircle className="w-4 h-4" /> 解析完了</> :
+                 'AI解析を実行'}
               </button>
             </div>
 
+            {widthsDetected && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">出力結果</h3>
               <div className="space-y-2">
@@ -382,6 +390,7 @@ export default function ExteriorWallPage() {
                 <CheckCircle className="w-4 h-4" /> 確定して次へ
               </button>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -400,19 +409,21 @@ export default function ExteriorWallPage() {
             </div>
             <button
               onClick={runWindowDetection}
-              disabled={windowsLoading}
+              disabled={windowsLoading || windowsDetected}
               className="w-full mt-3 px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
             >
-              {windowsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '窓情報を解析'}
+              {windowsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> :
+               windowsDetected ? <><CheckCircle className="w-4 h-4" /> 解析完了</> :
+               'AI解析を実行'}
             </button>
           </div>
           <div className="col-span-7 space-y-3">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="font-semibold text-sm mb-1">② 平面図から窓情報の取得</h3>
-              <p className="text-xs text-gray-500 mb-3">以下の内容を表で出力し、手動で編集可能</p>
+              <p className="text-xs text-gray-500 mb-3">{windowsDetected ? '以下の内容を表で出力し、手動で編集可能' : 'AI解析を実行してください'}</p>
             </div>
 
-            {faceWindows.map((fw, fIdx) => (
+            {windowsDetected && faceWindows.map((fw, fIdx) => (
               <div key={fw.face} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
                   <span className="text-sm font-bold text-gray-700">{fw.face}面の窓</span>
@@ -474,12 +485,14 @@ export default function ExteriorWallPage() {
               </div>
             ))}
 
+            {windowsDetected && (
             <button
               onClick={() => { setWindowsConfirmed(true); setCurrentStep(3); }}
               className="w-full px-3 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
             >
               <CheckCircle className="w-4 h-4" /> 確定して次へ
             </button>
+            )}
           </div>
         </div>
       )}
@@ -504,13 +517,16 @@ export default function ExteriorWallPage() {
               <p className="text-xs text-gray-500 mb-4">立面図をAI解析し、高さ方向の寸法を抽出します。</p>
               <button
                 onClick={runHeightDetection}
-                disabled={heightsLoading}
+                disabled={heightsLoading || heightsDetected}
                 className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {heightsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '立面図を解析'}
+                {heightsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> :
+                 heightsDetected ? <><CheckCircle className="w-4 h-4" /> 解析完了</> :
+                 'AI解析を実行'}
               </button>
             </div>
 
+            {heightsDetected && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">出力結果</h3>
               <div className="p-3 bg-slate-50 rounded-lg mb-3">
@@ -548,6 +564,7 @@ export default function ExteriorWallPage() {
                 <CheckCircle className="w-4 h-4" /> 確定して次へ
               </button>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -559,12 +576,12 @@ export default function ExteriorWallPage() {
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
                 <span className="text-sm font-semibold text-gray-700">
-                  {segConfirmed ? '出力画像：セグメンテーション結果' : '入力画像：立面図'}
+                  {segDone ? '出力画像：セグメンテーション結果' : '入力画像：立面図'}
                 </span>
               </div>
               <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 520 }}>
                 <img
-                  src={segConfirmed ? '/demo/elevation-segmented.png' : '/demo/elevation.png'}
+                  src={segDone ? '/demo/elevation-segmented.png' : '/demo/elevation.png'}
                   alt="立面図"
                   className="w-full h-auto"
                 />
@@ -579,16 +596,16 @@ export default function ExteriorWallPage() {
               </p>
               <button
                 onClick={runSegmentation}
-                disabled={segLoading || segConfirmed}
+                disabled={segLoading || segDone}
                 className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {segLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> セグメンテーション中...</> :
-                 segConfirmed ? <><CheckCircle className="w-4 h-4" /> セグメンテーション完了</> :
-                 'セグメンテーション実行'}
+                {segLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> :
+                 segDone ? <><CheckCircle className="w-4 h-4" /> 解析完了</> :
+                 'AI解析を実行'}
               </button>
             </div>
 
-            {segConfirmed && (
+            {segDone && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">検出結果</h3>
                 <div className="space-y-2">
@@ -610,7 +627,7 @@ export default function ExteriorWallPage() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setCurrentStep(5)}
+                  onClick={() => { setSegConfirmed(true); setCurrentStep(5); }}
                   className="w-full mt-4 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
                 >
                   <CheckCircle className="w-4 h-4" /> 確認して次へ
@@ -636,9 +653,9 @@ export default function ExteriorWallPage() {
                 <p className="text-sm text-gray-500 mb-4">各ステップのデータを使って外壁面積を算出します。</p>
                 <button
                   onClick={runCalculation}
-                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2"
                 >
-                  面積を算出する
+                  <Calculator className="w-4 h-4" /> 面積を算出する
                 </button>
               </div>
             ) : (

@@ -1,431 +1,283 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, ArrowRight, Upload, Ruler, Square, DoorOpen,
-  Calculator, CheckCircle, Circle, ZoomIn, ZoomOut, Maximize,
-  Trash2, MousePointer, PlusSquare, RotateCcw, Eye,
+  ArrowLeft, ArrowRight, Ruler, Table2, Building, Layers,
+  Calculator, CheckCircle, Pencil, Trash2, Plus, Save,
+  Loader2,
 } from 'lucide-react';
-import { Project, ElevationFace, WallRect, ExteriorWallData } from '@/lib/types';
+import { Project, ExteriorWallData } from '@/lib/types';
 import { getProject, getExteriorWallData, saveExteriorWallData } from '@/lib/storage';
 
-// ステップ定義
+/* ============================
+   型定義
+   ============================ */
+interface WindowItem {
+  id: string;
+  room: string;
+  type: string;
+  widthMm: number;
+  heightMm: number;
+  areaSqm: number;
+}
+
+interface FaceWindows {
+  face: string;
+  windows: WindowItem[];
+  totalArea: number;
+}
+
+interface FaceWidth {
+  face: string;
+  widthMm: number;
+}
+
+interface HeightData {
+  maxHeight: number;    // 最高高さ−土台
+  eaveHeight: number;   // 軒高さ−土台
+  flToEave: number;     // 1FL−軒高さ
+}
+
+interface FaceResult {
+  face: string;
+  widthM: number;
+  heightM: number;
+  grossArea: number;
+  windowArea: number;
+  netArea: number;
+}
+
+/* ============================
+   ステップ定義
+   ============================ */
 const STEPS = [
-  { id: 'upload', label: '立面図アップロード', icon: Upload },
-  { id: 'scale', label: 'スケール設定', icon: Ruler },
-  { id: 'wall', label: '壁面領域設定', icon: Square },
-  { id: 'opening', label: '開口部設定', icon: DoorOpen },
-  { id: 'calc', label: '面積算出', icon: Calculator },
-  { id: 'confirm', label: '確定', icon: CheckCircle },
+  { id: 1, label: '①平面図から横幅取得', icon: Ruler },
+  { id: 2, label: '②窓情報の取得', icon: Table2 },
+  { id: 3, label: '③立面図から寸法取得', icon: Building },
+  { id: 4, label: '④立面図セグメンテーション', icon: Layers },
+  { id: 5, label: '⑤面積の算出', icon: Calculator },
 ] as const;
 
-type StepId = typeof STEPS[number]['id'];
-
-// デモ用の立面図描画
-function drawDemoElevation(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  faceName: string,
-) {
-  ctx.clearRect(0, 0, w, h);
-  // 背景
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, w, h);
-
-  // 地面
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillRect(0, h - 60, w, 60);
-  ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, h - 60);
-  ctx.lineTo(w, h - 60);
-  ctx.stroke();
-
-  const bx = 100, by = 80;
-  const bw = w - 200, bh = h - 180;
-
-  // 基礎
-  ctx.fillStyle = '#cbd5e1';
-  ctx.fillRect(bx - 10, by + bh, bw + 20, 40);
-  ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bx - 10, by + bh, bw + 20, 40);
-
-  // 壁面
-  ctx.fillStyle = '#fef3c7';
-  ctx.fillRect(bx, by + 60, bw, bh - 60);
-  ctx.strokeStyle = '#92400e';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(bx, by + 60, bw, bh - 60);
-
-  // 屋根
-  ctx.fillStyle = '#dc2626';
-  ctx.globalAlpha = 0.3;
-  ctx.beginPath();
-  ctx.moveTo(bx - 30, by + 60);
-  ctx.lineTo(bx + bw / 2, by);
-  ctx.lineTo(bx + bw + 30, by + 60);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = '#991b1b';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(bx - 30, by + 60);
-  ctx.lineTo(bx + bw / 2, by);
-  ctx.lineTo(bx + bw + 30, by + 60);
-  ctx.closePath();
-  ctx.stroke();
-
-  // 窓（面による配置変更）
-  const isFront = faceName === '正面' || faceName === '背面';
-  if (isFront) {
-    // 大窓 x2
-    drawWindow(ctx, bx + 60, by + 100, 120, 100);
-    drawWindow(ctx, bx + bw - 180, by + 100, 120, 100);
-    // 小窓 x2 (2F)
-    drawWindow(ctx, bx + 60, by + 240, 80, 70);
-    drawWindow(ctx, bx + bw - 140, by + 240, 80, 70);
-    // ドア
-    if (faceName === '正面') {
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(bx + bw / 2 - 35, by + bh - 130, 70, 130);
-      ctx.strokeStyle = '#451a03';
-      ctx.strokeRect(bx + bw / 2 - 35, by + bh - 130, 70, 130);
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.arc(bx + bw / 2 + 20, by + bh - 65, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else {
-    // 側面
-    drawWindow(ctx, bx + bw / 2 - 50, by + 110, 100, 90);
-    drawWindow(ctx, bx + bw / 2 - 40, by + 250, 60, 50);
-  }
-
-  // 寸法線
-  ctx.strokeStyle = '#3b82f6';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  // 横幅
-  ctx.beginPath();
-  ctx.moveTo(bx, h - 35);
-  ctx.lineTo(bx + bw, h - 35);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#1e40af';
-  ctx.font = '12px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${isFront ? '9,100' : '6,370'} mm`, bx + bw / 2, h - 20);
-  // 高さ
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(w - 50, by + 60);
-  ctx.lineTo(w - 50, by + bh);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.save();
-  ctx.translate(w - 30, by + 60 + (bh - 60) / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('5,600 mm', 0, 0);
-  ctx.restore();
-
-  // 面名ラベル
-  ctx.fillStyle = '#1e293b';
-  ctx.font = 'bold 16px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`立面図 - ${faceName}`, 20, 30);
-}
-
-function drawWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.fillStyle = '#bfdbfe';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
-  ctx.beginPath();
-  ctx.moveTo(x + w / 2, y);
-  ctx.lineTo(x + w / 2, y + h);
-  ctx.moveTo(x, y + h / 2);
-  ctx.lineTo(x + w, y + h / 2);
-  ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-}
-
-// ID生成
 const uid = () => Math.random().toString(36).substring(2, 10);
 
-// デフォルト面データ
-function createDefaultFaces(): ElevationFace[] {
-  return ['正面', '背面', '左側面', '右側面'].map(name => ({
-    id: uid(),
-    name,
-    scale: 0.1, // 0.1 px/mm = 10mm per pixel
-    wallRects: [],
-    openingRects: [],
-    wallAreaM2: 0,
-    openingAreaM2: 0,
-    netAreaM2: 0,
-    confirmed: false,
-  }));
-}
+/* ============================
+   デモデータ（喜田産業サンプル）
+   ============================ */
+const DEMO_WIDTHS: FaceWidth[] = [
+  { face: '北', widthMm: 12740 },
+  { face: '南', widthMm: 12740 },
+  { face: '東', widthMm: 11375 },
+  { face: '西', widthMm: 11375 },
+];
 
+const DEMO_WINDOWS: FaceWindows[] = [
+  {
+    face: '北',
+    windows: [
+      { id: uid(), room: 'トイレ北側', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
+      { id: uid(), room: '子ども室', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
+    ],
+    totalArea: 1.622,
+  },
+  {
+    face: '南',
+    windows: [
+      { id: uid(), room: '寝室', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
+      { id: uid(), room: 'クローゼット南側', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
+      { id: uid(), room: 'LDK中央', type: '引違い窓', widthMm: 2560, heightMm: 2000, areaSqm: 5.12 },
+      { id: uid(), room: 'LDK東側', type: '引違い窓', widthMm: 2560, heightMm: 2000, areaSqm: 5.12 },
+    ],
+    totalArea: 11.862,
+  },
+  {
+    face: '東',
+    windows: [
+      { id: uid(), room: 'タタミコーナー', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
+      { id: uid(), room: 'ポーチ横', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
+    ],
+    totalArea: 1.622,
+  },
+  {
+    face: '西',
+    windows: [
+      { id: uid(), room: 'ランドリー', type: 'FIX窓', widthMm: 1195, heightMm: 300, areaSqm: 0.3585 },
+    ],
+    totalArea: 0.3585,
+  },
+];
+
+const DEMO_HEIGHTS: HeightData = {
+  maxHeight: 4200,
+  eaveHeight: 2850,
+  flToEave: 2810,
+};
+
+/* ============================
+   メインコンポーネント
+   ============================ */
 export default function ExteriorWallPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
 
   const [project, setProject] = useState<Project | null>(null);
-  const [currentStep, setCurrentStep] = useState<StepId>('upload');
-  const [activeFaceIdx, setActiveFaceIdx] = useState(0);
-  const [faces, setFaces] = useState<ElevationFace[]>(createDefaultFaces);
-  const [zoom, setZoom] = useState(1);
-  const [drawMode, setDrawMode] = useState<'select' | 'wall' | 'opening'>('select');
-  const [drawing, setDrawing] = useState(false);
-  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
-  const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null);
-  const [selectedRect, setSelectedRect] = useState<string | null>(null);
-  const [scaleInput, setScaleInput] = useState('9100');
-  const [scalePixels, setScalePixels] = useState('');
-  const [demoLoaded, setDemoLoaded] = useState<boolean[]>([false, false, false, false]);
-  const [stepConfirmed, setStepConfirmed] = useState<Record<StepId, boolean>>({
-    upload: false, scale: false, wall: false, opening: false, calc: false, confirm: false,
-  });
+  const [currentStep, setCurrentStep] = useState(1);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Step1: 横幅
+  const [widths, setWidths] = useState<FaceWidth[]>(DEMO_WIDTHS.map(w => ({ ...w })));
+  const [widthsLoading, setWidthsLoading] = useState(false);
+  const [widthsConfirmed, setWidthsConfirmed] = useState(false);
 
-  const CANVAS_W = 800;
-  const CANVAS_H = 500;
+  // Step2: 窓情報
+  const [faceWindows, setFaceWindows] = useState<FaceWindows[]>(
+    DEMO_WINDOWS.map(fw => ({ ...fw, windows: fw.windows.map(w => ({ ...w })) }))
+  );
+  const [windowsLoading, setWindowsLoading] = useState(false);
+  const [windowsConfirmed, setWindowsConfirmed] = useState(false);
+
+  // Step3: 立面図寸法
+  const [heights, setHeights] = useState<HeightData>({ ...DEMO_HEIGHTS });
+  const [heightsLoading, setHeightsLoading] = useState(false);
+  const [heightsConfirmed, setHeightsConfirmed] = useState(false);
+
+  // Step4: セグメンテーション
+  const [segLoading, setSegLoading] = useState(false);
+  const [segConfirmed, setSegConfirmed] = useState(false);
+
+  // Step5: 面積
+  const [results, setResults] = useState<FaceResult[]>([]);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const p = getProject(projectId);
     if (!p) { router.push('/'); return; }
     setProject(p);
-    const saved = getExteriorWallData(projectId);
-    if (saved) {
-      setFaces(saved.faces);
-      if (saved.confirmedAt) {
-        setStepConfirmed(prev => ({ ...prev, upload: true, scale: true, wall: true, opening: true, calc: true, confirm: true }));
-      }
-    }
   }, [projectId, router]);
 
-  const activeFace = faces[activeFaceIdx];
+  // AI解析シミュレーション
+  const simulateAI = (setLoading: (v: boolean) => void, onDone: () => void, ms = 1500) => {
+    setLoading(true);
+    setTimeout(() => { setLoading(false); onDone(); }, ms);
+  };
 
-  // Canvas描画
-  const redraw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(zoom, zoom);
-
-    // デモ立面図描画
-    drawDemoElevation(ctx, CANVAS_W, CANVAS_H, activeFace.name);
-
-    // 壁面矩形(緑)
-    activeFace.wallRects.forEach(r => {
-      ctx.fillStyle = selectedRect === r.id ? 'rgba(34,197,94,0.4)' : 'rgba(34,197,94,0.2)';
-      ctx.fillRect(r.x, r.y, r.width, r.height);
-      ctx.strokeStyle = selectedRect === r.id ? '#15803d' : '#22c55e';
-      ctx.lineWidth = selectedRect === r.id ? 3 : 2;
-      ctx.strokeRect(r.x, r.y, r.width, r.height);
-      ctx.fillStyle = '#15803d';
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(r.label, r.x + 4, r.y + 14);
+  // Step1: AI横幅取得
+  const runWidthDetection = () => {
+    simulateAI(setWidthsLoading, () => {
+      setWidths(DEMO_WIDTHS.map(w => ({ ...w })));
     });
+  };
 
-    // 開口部矩形(赤)
-    activeFace.openingRects.forEach(r => {
-      ctx.fillStyle = selectedRect === r.id ? 'rgba(239,68,68,0.4)' : 'rgba(239,68,68,0.2)';
-      ctx.fillRect(r.x, r.y, r.width, r.height);
-      ctx.strokeStyle = selectedRect === r.id ? '#b91c1c' : '#ef4444';
-      ctx.lineWidth = selectedRect === r.id ? 3 : 2;
-      ctx.strokeRect(r.x, r.y, r.width, r.height);
-      ctx.fillStyle = '#b91c1c';
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(r.label, r.x + 4, r.y + 14);
+  // Step2: AI窓情報取得
+  const runWindowDetection = () => {
+    simulateAI(setWindowsLoading, () => {
+      setFaceWindows(DEMO_WINDOWS.map(fw => ({
+        ...fw,
+        windows: fw.windows.map(w => ({ ...w, id: uid() })),
+      })));
     });
-
-    // 描画中の矩形
-    if (drawing && drawStart && drawCurrent) {
-      const rx = Math.min(drawStart.x, drawCurrent.x);
-      const ry = Math.min(drawStart.y, drawCurrent.y);
-      const rw = Math.abs(drawCurrent.x - drawStart.x);
-      const rh = Math.abs(drawCurrent.y - drawStart.y);
-      ctx.fillStyle = drawMode === 'wall' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)';
-      ctx.fillRect(rx, ry, rw, rh);
-      ctx.strokeStyle = drawMode === 'wall' ? '#22c55e' : '#ef4444';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 3]);
-      ctx.strokeRect(rx, ry, rw, rh);
-      ctx.setLineDash([]);
-    }
-
-    ctx.restore();
-  }, [zoom, activeFace, selectedRect, drawing, drawStart, drawCurrent, drawMode]);
-
-  useEffect(() => { redraw(); }, [redraw]);
-
-  // マウスイベント
-  const getCanvasPos = (e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) / zoom,
-      y: (e.clientY - rect.top) / zoom,
-    };
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (drawMode === 'select') {
-      const pos = getCanvasPos(e);
-      const allRects = [...activeFace.wallRects, ...activeFace.openingRects];
-      const hit = allRects.find(r =>
-        pos.x >= r.x && pos.x <= r.x + r.width &&
-        pos.y >= r.y && pos.y <= r.y + r.height
-      );
-      setSelectedRect(hit?.id ?? null);
-      return;
-    }
-    if (drawMode === 'wall' || drawMode === 'opening') {
-      const pos = getCanvasPos(e);
-      setDrawing(true);
-      setDrawStart(pos);
-      setDrawCurrent(pos);
-    }
+  // Step3: AI立面図寸法取得
+  const runHeightDetection = () => {
+    simulateAI(setHeightsLoading, () => {
+      setHeights({ ...DEMO_HEIGHTS });
+    });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!drawing) return;
-    setDrawCurrent(getCanvasPos(e));
+  // Step4: セグメンテーション
+  const runSegmentation = () => {
+    simulateAI(setSegLoading, () => {
+      setSegConfirmed(true);
+    }, 2000);
   };
 
-  const handleMouseUp = () => {
-    if (!drawing || !drawStart || !drawCurrent) { setDrawing(false); return; }
-    const rx = Math.min(drawStart.x, drawCurrent.x);
-    const ry = Math.min(drawStart.y, drawCurrent.y);
-    const rw = Math.abs(drawCurrent.x - drawStart.x);
-    const rh = Math.abs(drawCurrent.y - drawStart.y);
-    if (rw < 10 || rh < 10) { setDrawing(false); return; }
-
-    const newRect: WallRect = {
-      id: uid(),
-      x: rx, y: ry, width: rw, height: rh,
-      label: drawMode === 'wall'
-        ? `壁面${activeFace.wallRects.length + 1}`
-        : `開口部${activeFace.openingRects.length + 1}`,
-      type: drawMode as 'wall' | 'opening',
-    };
-
-    setFaces(prev => prev.map((f, i) => {
-      if (i !== activeFaceIdx) return f;
-      return drawMode === 'wall'
-        ? { ...f, wallRects: [...f.wallRects, newRect] }
-        : { ...f, openingRects: [...f.openingRects, newRect] };
-    }));
-    setDrawing(false);
-    setDrawStart(null);
-    setDrawCurrent(null);
+  // 窓の面積を再計算
+  const recalcWindowArea = (w: WindowItem): number => {
+    return Math.round((w.widthMm * w.heightMm) / 1_000_000 * 10000) / 10000;
   };
 
-  const deleteSelectedRect = () => {
-    if (!selectedRect) return;
-    setFaces(prev => prev.map((f, i) => {
-      if (i !== activeFaceIdx) return f;
-      return {
-        ...f,
-        wallRects: f.wallRects.filter(r => r.id !== selectedRect),
-        openingRects: f.openingRects.filter(r => r.id !== selectedRect),
-      };
-    }));
-    setSelectedRect(null);
-  };
-
-  // デモデータ自動追加
-  const loadDemoWalls = () => {
-    const isFront = activeFace.name === '正面' || activeFace.name === '背面';
-    const bx = 100, by = 140, bw = CANVAS_W - 200, bh = CANVAS_H - 240;
-    const wallRect: WallRect = {
-      id: uid(), x: bx, y: by, width: bw, height: bh,
-      label: '壁面全体', type: 'wall',
-    };
-    const openings: WallRect[] = isFront ? [
-      { id: uid(), x: bx + 60, y: by + 0, width: 120, height: 100, label: '窓1(1F左)', type: 'opening' },
-      { id: uid(), x: bx + bw - 180, y: by + 0, width: 120, height: 100, label: '窓2(1F右)', type: 'opening' },
-      { id: uid(), x: bx + 60, y: by + 140, width: 80, height: 70, label: '窓3(2F左)', type: 'opening' },
-      { id: uid(), x: bx + bw - 140, y: by + 140, width: 80, height: 70, label: '窓4(2F右)', type: 'opening' },
-      ...(activeFace.name === '正面' ? [{
-        id: uid(), x: bx + bw / 2 - 35, y: by + bh - 130, width: 70, height: 130,
-        label: '玄関ドア', type: 'opening' as const,
-      }] : []),
-    ] : [
-      { id: uid(), x: bx + bw / 2 - 50, y: by + 10, width: 100, height: 90, label: '窓1', type: 'opening' },
-      { id: uid(), x: bx + bw / 2 - 40, y: by + 150, width: 60, height: 50, label: '窓2', type: 'opening' },
-    ];
-    setFaces(prev => prev.map((f, i) => {
-      if (i !== activeFaceIdx) return f;
-      return { ...f, wallRects: [wallRect], openingRects: openings };
+  // 窓を更新
+  const updateWindow = (faceIdx: number, windowId: string, field: keyof WindowItem, value: string | number) => {
+    setFaceWindows(prev => prev.map((fw, fi) => {
+      if (fi !== faceIdx) return fw;
+      const newWindows = fw.windows.map(w => {
+        if (w.id !== windowId) return w;
+        const updated = { ...w, [field]: value };
+        if (field === 'widthMm' || field === 'heightMm') {
+          updated.areaSqm = recalcWindowArea(updated);
+        }
+        return updated;
+      });
+      return { ...fw, windows: newWindows, totalArea: Math.round(newWindows.reduce((s, w) => s + w.areaSqm, 0) * 10000) / 10000 };
     }));
   };
 
-  // 面積計算
-  const calcFaceArea = (face: ElevationFace): { wallArea: number; openingArea: number; netArea: number } => {
-    const scale = face.scale; // px/mm
-    const pxToM2 = (r: WallRect) => (r.width / scale) * (r.height / scale) / 1_000_000;
-    const wallArea = face.wallRects.reduce((s, r) => s + pxToM2(r), 0);
-    const openingArea = face.openingRects.reduce((s, r) => s + pxToM2(r), 0);
-    return { wallArea, openingArea, netArea: Math.max(0, wallArea - openingArea) };
+  // 窓を追加
+  const addWindow = (faceIdx: number) => {
+    setFaceWindows(prev => prev.map((fw, fi) => {
+      if (fi !== faceIdx) return fw;
+      const newW: WindowItem = { id: uid(), room: '', type: '引違い窓', widthMm: 0, heightMm: 0, areaSqm: 0 };
+      return { ...fw, windows: [...fw.windows, newW] };
+    }));
   };
 
+  // 窓を削除
+  const deleteWindow = (faceIdx: number, windowId: string) => {
+    setFaceWindows(prev => prev.map((fw, fi) => {
+      if (fi !== faceIdx) return fw;
+      const newWindows = fw.windows.filter(w => w.id !== windowId);
+      return { ...fw, windows: newWindows, totalArea: Math.round(newWindows.reduce((s, w) => s + w.areaSqm, 0) * 10000) / 10000 };
+    }));
+  };
+
+  // Step5: 面積算出
   const runCalculation = () => {
-    setFaces(prev => prev.map(f => {
-      const { wallArea, openingArea, netArea } = calcFaceArea(f);
-      return { ...f, wallAreaM2: Math.round(wallArea * 100) / 100, openingAreaM2: Math.round(openingArea * 100) / 100, netAreaM2: Math.round(netArea * 100) / 100 };
-    }));
-    setStepConfirmed(prev => ({ ...prev, calc: true }));
+    const eaveM = heights.eaveHeight / 1000;
+    const newResults = widths.map(w => {
+      const wM = w.widthMm / 1000;
+      const gross = Math.round(wM * eaveM * 1000) / 1000;
+      const fw = faceWindows.find(f => f.face === w.face);
+      const winA = fw ? fw.totalArea : 0;
+      const net = Math.round((gross - winA) * 1000) / 1000;
+      return {
+        face: w.face,
+        widthM: wM,
+        heightM: eaveM,
+        grossArea: gross,
+        windowArea: winA,
+        netArea: net,
+      };
+    });
+    setResults(newResults);
   };
 
-  const totalWallArea = faces.reduce((s, f) => s + f.wallAreaM2, 0);
-  const totalOpeningArea = faces.reduce((s, f) => s + f.openingAreaM2, 0);
-  const totalNetArea = faces.reduce((s, f) => s + f.netAreaM2, 0);
-
-  const handleConfirm = () => {
+  // 保存
+  const handleSave = () => {
+    const faces = results.map(r => ({
+      id: uid(),
+      name: `${r.face}側`,
+      scale: 0.1,
+      wallRects: [],
+      openingRects: [],
+      wallAreaM2: r.grossArea,
+      openingAreaM2: r.windowArea,
+      netAreaM2: r.netArea,
+      confirmed: true,
+    }));
     const data: ExteriorWallData = {
       projectId,
       faces,
-      totalWallArea,
-      totalOpeningArea,
-      totalNetArea,
+      totalWallArea: results.reduce((s, r) => s + r.grossArea, 0),
+      totalOpeningArea: results.reduce((s, r) => s + r.windowArea, 0),
+      totalNetArea: results.reduce((s, r) => s + r.netArea, 0),
       confirmedAt: new Date().toISOString(),
     };
     saveExteriorWallData(data);
-    setStepConfirmed(prev => ({ ...prev, confirm: true }));
+    setSaved(true);
   };
 
-  const handleSetScale = () => {
-    const mmVal = parseFloat(scaleInput);
-    const pxVal = parseFloat(scalePixels);
-    if (mmVal > 0 && pxVal > 0) {
-      const newScale = pxVal / mmVal;
-      setFaces(prev => prev.map((f, i) => i === activeFaceIdx ? { ...f, scale: newScale } : f));
-      setStepConfirmed(prev => ({ ...prev, scale: true }));
-    }
-  };
-
-  const stepIdx = STEPS.findIndex(s => s.id === currentStep);
+  const totalNet = useMemo(() => results.reduce((s, r) => s + r.netArea, 0), [results]);
 
   if (!project) {
     return <div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
@@ -438,338 +290,451 @@ export default function ExteriorWallPage() {
         <button onClick={() => router.push(`/projects/${projectId}`)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft className="w-4 h-4" /> プロジェクトに戻る
         </button>
-        <h1 className="text-lg font-bold text-gray-900">外壁面積算出</h1>
+        <h1 className="text-lg font-bold text-gray-900">外壁面積算出（立面図）</h1>
         <div className="text-sm text-gray-500">{project.name}</div>
       </div>
 
       {/* ステップバー */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white rounded-xl border border-gray-200 p-3 mb-5">
+        <div className="flex items-center gap-1">
           {STEPS.map((step, i) => {
             const Icon = step.icon;
             const isActive = step.id === currentStep;
-            const isDone = stepConfirmed[step.id];
+            const isDone = (step.id === 1 && widthsConfirmed) ||
+                           (step.id === 2 && windowsConfirmed) ||
+                           (step.id === 3 && heightsConfirmed) ||
+                           (step.id === 4 && segConfirmed) ||
+                           (step.id === 5 && results.length > 0);
             return (
               <div key={step.id} className="flex items-center flex-1">
                 <button
                   onClick={() => setCurrentStep(step.id)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all w-full ${
-                    isActive ? 'bg-blue-50 text-blue-700 font-semibold' :
-                    isDone ? 'text-green-700' : 'text-gray-500 hover:text-gray-700'
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all w-full ${
+                    isActive ? 'bg-blue-50 text-blue-700 font-bold ring-1 ring-blue-200' :
+                    isDone ? 'text-green-700 bg-green-50' : 'text-gray-500 hover:bg-gray-50'
                   }`}
                 >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                     isActive ? 'bg-blue-600 text-white' :
                     isDone ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
                   }`}>
-                    {isDone ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                    {isDone ? <CheckCircle className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
                   </div>
-                  <span className="hidden lg:inline">{step.label}</span>
+                  <span className="hidden xl:inline truncate">{step.label}</span>
                 </button>
-                {i < STEPS.length - 1 && (
-                  <div className={`h-0.5 w-4 mx-1 ${isDone ? 'bg-green-400' : 'bg-gray-200'}`} />
-                )}
+                {i < STEPS.length - 1 && <div className={`h-0.5 w-3 mx-0.5 flex-shrink-0 ${isDone ? 'bg-green-400' : 'bg-gray-200'}`} />}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* メインコンテンツ */}
-      <div className="grid grid-cols-12 gap-4">
-        {/* 左パネル: 面選択 & コントロール */}
-        <div className="col-span-3 space-y-4">
-          {/* 面タブ */}
-          <div className="bg-white rounded-xl border border-gray-200 p-3">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">立面</h3>
-            <div className="space-y-1">
-              {faces.map((f, i) => (
-                <button
-                  key={f.id}
-                  onClick={() => { setActiveFaceIdx(i); setSelectedRect(null); }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                    i === activeFaceIdx ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200' : 'text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>{f.name}</span>
-                    {f.wallRects.length > 0 && <span className="text-xs text-green-600">{f.netAreaM2 > 0 ? `${f.netAreaM2}㎡` : '設定済'}</span>}
-                  </div>
-                </button>
-              ))}
+      {/* ======== Step 1: 平面図から横幅取得 ======== */}
+      {currentStep === 1 && (
+        <div className="grid grid-cols-12 gap-5">
+          <div className="col-span-8">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-700">入力画像：平面図</span>
+                <span className="text-xs text-gray-400">平面図＿20251120.pdf</span>
+              </div>
+              <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 520 }}>
+                <img src="/demo/floor-plan.png" alt="平面図" className="w-full h-auto" />
+              </div>
             </div>
           </div>
+          <div className="col-span-4 space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-sm mb-3">① 平面図から各方角の横幅を取る</h3>
+              <p className="text-xs text-gray-500 mb-4">平面図をAI解析し、建物の各方角の横幅（mm）を抽出します。</p>
+              <button
+                onClick={runWidthDetection}
+                disabled={widthsLoading}
+                className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
+              >
+                {widthsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '平面図を解析'}
+              </button>
+            </div>
 
-          {/* ステップ別コントロール */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            {currentStep === 'upload' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 1: 立面図アップロード</h3>
-                <p className="text-xs text-gray-500 mb-3">立面図PDFまたは画像をアップロードしてください。デモモードではサンプル図面が表示されます。</p>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">出力結果</h3>
+              <div className="space-y-2">
+                {widths.map((w, i) => (
+                  <div key={w.face} className="flex items-center gap-2">
+                    <span className="w-8 text-sm font-bold text-gray-700">{w.face}</span>
+                    <input
+                      type="number"
+                      value={w.widthMm}
+                      onChange={e => setWidths(prev => prev.map((pw, pi) => pi === i ? { ...pw, widthMm: Number(e.target.value) } : pw))}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right font-mono focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+                    />
+                    <span className="text-xs text-gray-400 w-8">mm</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
+                北：{widths[0].widthMm}　東：{widths[2].widthMm}　西：{widths[3].widthMm}　南：{widths[1].widthMm}
+              </div>
+              <button
+                onClick={() => { setWidthsConfirmed(true); setCurrentStep(2); }}
+                className="w-full mt-3 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" /> 確定して次へ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======== Step 2: 窓情報取得 ======== */}
+      {currentStep === 2 && (
+        <div className="grid grid-cols-12 gap-5">
+          <div className="col-span-5">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b bg-gray-50">
+                <span className="text-sm font-semibold text-gray-700">入力画像：平面図</span>
+              </div>
+              <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 600 }}>
+                <img src="/demo/floor-plan.png" alt="平面図" className="w-full h-auto" />
+              </div>
+            </div>
+            <button
+              onClick={runWindowDetection}
+              disabled={windowsLoading}
+              className="w-full mt-3 px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
+            >
+              {windowsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '窓情報を解析'}
+            </button>
+          </div>
+          <div className="col-span-7 space-y-3">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-sm mb-1">② 平面図から窓情報の取得</h3>
+              <p className="text-xs text-gray-500 mb-3">以下の内容を表で出力し、手動で編集可能</p>
+            </div>
+
+            {faceWindows.map((fw, fIdx) => (
+              <div key={fw.face} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-700">{fw.face}面の窓</span>
+                  <span className="text-xs font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded">合計: {fw.totalArea} ㎡</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 text-gray-500">
+                        <th className="px-3 py-2 text-left font-medium">部屋名</th>
+                        <th className="px-3 py-2 text-left font-medium">窓種別</th>
+                        <th className="px-3 py-2 text-right font-medium">幅(mm)</th>
+                        <th className="px-3 py-2 text-right font-medium">高さ(mm)</th>
+                        <th className="px-3 py-2 text-right font-medium">面積(㎡)</th>
+                        <th className="px-2 py-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fw.windows.map(w => (
+                        <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
+                          <td className="px-2 py-1.5">
+                            <input value={w.room} onChange={e => updateWindow(fIdx, w.id, 'room', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs" />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <select value={w.type} onChange={e => updateWindow(fIdx, w.id, 'type', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white">
+                              <option>引違い窓</option>
+                              <option>縦スベリ出し窓</option>
+                              <option>FIX窓</option>
+                              <option>上げ下げ窓</option>
+                              <option>ルーバー窓</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input type="number" value={w.widthMm} onChange={e => updateWindow(fIdx, w.id, 'widthMm', Number(e.target.value))}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input type="number" value={w.heightMm} onChange={e => updateWindow(fIdx, w.id, 'heightMm', Number(e.target.value))}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono text-gray-700">{w.areaSqm}</td>
+                          <td className="px-2 py-1.5">
+                            <button onClick={() => deleteWindow(fIdx, w.id)} className="p-1 text-red-400 hover:text-red-600">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-4 py-2 border-t border-gray-100">
+                  <button onClick={() => addWindow(fIdx)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                    <Plus className="w-3.5 h-3.5" /> 窓を追加
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => { setWindowsConfirmed(true); setCurrentStep(3); }}
+              className="w-full px-3 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+            >
+              <CheckCircle className="w-4 h-4" /> 確定して次へ
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======== Step 3: 立面図から寸法取得 ======== */}
+      {currentStep === 3 && (
+        <div className="grid grid-cols-12 gap-5">
+          <div className="col-span-8">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-700">入力画像：立面図</span>
+                <span className="text-xs text-gray-400">立面図＿20251120.pdf</span>
+              </div>
+              <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 520 }}>
+                <img src="/demo/elevation.png" alt="立面図" className="w-full h-auto" />
+              </div>
+            </div>
+          </div>
+          <div className="col-span-4 space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-sm mb-3">③ 立面図からの寸法取得</h3>
+              <p className="text-xs text-gray-500 mb-4">立面図をAI解析し、高さ方向の寸法を抽出します。</p>
+              <button
+                onClick={runHeightDetection}
+                disabled={heightsLoading}
+                className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
+              >
+                {heightsLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> AI解析中...</> : '立面図を解析'}
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">出力結果</h3>
+              <div className="p-3 bg-slate-50 rounded-lg mb-3">
+                <img src="/demo/elevation.png" alt="立面図寸法" className="w-full h-auto opacity-80" />
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">最高高さ − 土台 (mm)</label>
+                  <input type="number" value={heights.maxHeight}
+                    onChange={e => setHeights(prev => ({ ...prev, maxHeight: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-right focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">軒高さ − 土台 (mm)</label>
+                  <input type="number" value={heights.eaveHeight}
+                    onChange={e => setHeights(prev => ({ ...prev, eaveHeight: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-right focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">1FL − 軒高さ (mm)</label>
+                  <input type="number" value={heights.flToEave}
+                    onChange={e => setHeights(prev => ({ ...prev, flToEave: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-right focus:ring-2 focus:ring-blue-300" />
+                </div>
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700 space-y-1">
+                <div>最高高さ−土台：<span className="font-bold">{heights.maxHeight}</span></div>
+                <div>軒高さ−土台：<span className="font-bold">{heights.eaveHeight}</span></div>
+                <div>1FL−軒高さ：<span className="font-bold">{heights.flToEave}</span></div>
+              </div>
+              <button
+                onClick={() => { setHeightsConfirmed(true); setCurrentStep(4); }}
+                className="w-full mt-3 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" /> 確定して次へ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======== Step 4: 立面図セグメンテーション ======== */}
+      {currentStep === 4 && (
+        <div className="grid grid-cols-12 gap-5">
+          <div className="col-span-8">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-700">
+                  {segConfirmed ? '出力画像：セグメンテーション結果' : '入力画像：立面図'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 520 }}>
+                <img
+                  src={segConfirmed ? '/demo/elevation-segmented.png' : '/demo/elevation.png'}
+                  alt="立面図"
+                  className="w-full h-auto"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="col-span-4 space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-sm mb-3">④ 立面図セグメンテーション</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                立面図の壁面・屋根・基礎・開口部をAIで自動認識し、色分け表示します。
+              </p>
+              <button
+                onClick={runSegmentation}
+                disabled={segLoading || segConfirmed}
+                className="w-full px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
+              >
+                {segLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> セグメンテーション中...</> :
+                 segConfirmed ? <><CheckCircle className="w-4 h-4" /> セグメンテーション完了</> :
+                 'セグメンテーション実行'}
+              </button>
+            </div>
+
+            {segConfirmed && (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">検出結果</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: '#fef3c7' }}></div>
+                    <span className="text-xs text-gray-700">外壁面（4面）</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: '#dc2626', opacity: 0.5 }}></div>
+                    <span className="text-xs text-gray-700">屋根部分</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: '#7c3aed', opacity: 0.5 }}></div>
+                    <span className="text-xs text-gray-700">基礎部分</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: '#bfdbfe' }}></div>
+                    <span className="text-xs text-gray-700">開口部（窓・ドア）</span>
+                  </div>
+                </div>
                 <button
-                  onClick={() => {
-                    setDemoLoaded(prev => prev.map((_, i) => true));
-                    setStepConfirmed(prev => ({ ...prev, upload: true }));
-                  }}
-                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2"
+                  onClick={() => setCurrentStep(5)}
+                  className="w-full mt-4 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
                 >
-                  <Eye className="w-4 h-4" />
-                  デモ図面を読み込む
+                  <CheckCircle className="w-4 h-4" /> 確認して次へ
                 </button>
-                <div className="mt-3 border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-xs text-gray-400">またはファイルをドロップ</p>
-                  <p className="text-xs text-gray-300 mt-1">PDF / PNG / JPG</p>
-                </div>
-              </div>
-            )}
-
-            {currentStep === 'scale' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 2: スケール設定</h3>
-                <p className="text-xs text-gray-500 mb-3">図面上の既知寸法を指定して、ピクセルと実寸の対応を設定します。</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-gray-600 block mb-1">実寸値 (mm)</label>
-                    <input type="number" value={scaleInput} onChange={e => setScaleInput(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-600 block mb-1">対応ピクセル数 (px)</label>
-                    <input type="number" value={scalePixels} onChange={e => setScalePixels(e.target.value)}
-                      placeholder="図面上で計測"
-                      className="w-full px-3 py-2 border rounded-lg text-sm" />
-                  </div>
-                  <button onClick={handleSetScale}
-                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                    スケール確定
-                  </button>
-                  <button onClick={() => {
-                    setFaces(prev => prev.map((f, i) => i === activeFaceIdx ? { ...f, scale: 0.1 } : f));
-                    setStepConfirmed(prev => ({ ...prev, scale: true }));
-                  }}
-                    className="w-full px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">
-                    デモ値を使用 (1px = 10mm)
-                  </button>
-                  <div className="text-xs text-gray-400 bg-gray-50 rounded p-2">
-                    現在: 1px = {(1 / activeFace.scale).toFixed(1)}mm
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStep === 'wall' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 3: 壁面領域設定</h3>
-                <p className="text-xs text-gray-500 mb-3">壁面の外形を矩形で指定してください。キャンバス上でドラッグして描画します。</p>
-                <div className="space-y-2 mb-3">
-                  <button onClick={() => setDrawMode('wall')}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${drawMode === 'wall' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-50 text-gray-600'}`}>
-                    <PlusSquare className="w-4 h-4" /> 壁面矩形を描画
-                  </button>
-                  <button onClick={() => setDrawMode('select')}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${drawMode === 'select' ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-gray-50 text-gray-600'}`}>
-                    <MousePointer className="w-4 h-4" /> 選択モード
-                  </button>
-                </div>
-                <button onClick={loadDemoWalls}
-                  className="w-full px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center justify-center gap-2">
-                  <RotateCcw className="w-4 h-4" /> AI自動検出 (デモ)
-                </button>
-                {selectedRect && (
-                  <button onClick={deleteSelectedRect}
-                    className="w-full mt-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 flex items-center justify-center gap-2">
-                    <Trash2 className="w-4 h-4" /> 選択した矩形を削除
-                  </button>
-                )}
-                <div className="mt-3 text-xs text-gray-500">
-                  壁面矩形: {activeFace.wallRects.length}個
-                </div>
-                {activeFace.wallRects.length > 0 && (
-                  <button onClick={() => setStepConfirmed(prev => ({ ...prev, wall: true }))}
-                    className="w-full mt-2 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">
-                    壁面領域を確定
-                  </button>
-                )}
-              </div>
-            )}
-
-            {currentStep === 'opening' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 4: 開口部設定</h3>
-                <p className="text-xs text-gray-500 mb-3">窓・ドアなどの開口部を矩形で指定してください。</p>
-                <div className="space-y-2 mb-3">
-                  <button onClick={() => setDrawMode('opening')}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${drawMode === 'opening' ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-gray-50 text-gray-600'}`}>
-                    <PlusSquare className="w-4 h-4" /> 開口部矩形を描画
-                  </button>
-                  <button onClick={() => setDrawMode('select')}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${drawMode === 'select' ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-gray-50 text-gray-600'}`}>
-                    <MousePointer className="w-4 h-4" /> 選択モード
-                  </button>
-                </div>
-                {selectedRect && (
-                  <button onClick={deleteSelectedRect}
-                    className="w-full mt-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 flex items-center justify-center gap-2">
-                    <Trash2 className="w-4 h-4" /> 選択した矩形を削除
-                  </button>
-                )}
-                <div className="mt-3 text-xs text-gray-500">
-                  開口部矩形: {activeFace.openingRects.length}個
-                </div>
-                {activeFace.openingRects.length > 0 && (
-                  <button onClick={() => setStepConfirmed(prev => ({ ...prev, opening: true }))}
-                    className="w-full mt-2 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">
-                    開口部を確定
-                  </button>
-                )}
-              </div>
-            )}
-
-            {currentStep === 'calc' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 5: 面積算出</h3>
-                <p className="text-xs text-gray-500 mb-3">設定した壁面と開口部から外壁面積を算出します。</p>
-                <button onClick={runCalculation}
-                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2">
-                  <Calculator className="w-4 h-4" /> 面積を算出
-                </button>
-              </div>
-            )}
-
-            {currentStep === 'confirm' && (
-              <div>
-                <h3 className="font-semibold text-sm mb-3">Step 6: 確定</h3>
-                <p className="text-xs text-gray-500 mb-3">計算結果を確認し、確定してください。</p>
-                <button onClick={handleConfirm}
-                  className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2">
-                  <CheckCircle className="w-4 h-4" /> 外壁面積を確定・保存
-                </button>
-                {stepConfirmed.confirm && (
-                  <p className="mt-3 text-sm text-green-600 font-semibold text-center">確定済み</p>
-                )}
               </div>
             )}
           </div>
         </div>
+      )}
 
-        {/* 中央: Canvas */}
-        <div className="col-span-6">
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {/* ツールバー */}
-            <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">{activeFace.name}</span>
-                {drawMode !== 'select' && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${drawMode === 'wall' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {drawMode === 'wall' ? '壁面描画中' : '開口部描画中'}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setZoom(z => Math.max(0.3, z - 0.1))} className="p-1 rounded hover:bg-gray-200">
-                  <ZoomOut className="w-4 h-4 text-gray-500" />
-                </button>
-                <span className="text-xs text-gray-500 w-12 text-center">{Math.round(zoom * 100)}%</span>
-                <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1 rounded hover:bg-gray-200">
-                  <ZoomIn className="w-4 h-4 text-gray-500" />
-                </button>
-                <button onClick={() => setZoom(1)} className="p-1 rounded hover:bg-gray-200">
-                  <Maximize className="w-4 h-4 text-gray-500" />
+      {/* ======== Step 5: 面積の算出 ======== */}
+      {currentStep === 5 && (
+        <div className="space-y-5">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-sm">⑤ 面積の算出</h3>
+              <p className="text-xs text-gray-500">以下の内容を表で出力し、手動で編集可能</p>
+            </div>
+
+            {results.length === 0 ? (
+              <div className="text-center py-8">
+                <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-sm text-gray-500 mb-4">各ステップのデータを使って外壁面積を算出します。</p>
+                <button
+                  onClick={runCalculation}
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                >
+                  面積を算出する
                 </button>
               </div>
-            </div>
-            {/* Canvas */}
-            <div ref={containerRef} className="overflow-auto bg-slate-100" style={{ maxHeight: '500px' }}>
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_W * zoom}
-                height={CANVAS_H * zoom}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={() => { if (drawing) handleMouseUp(); }}
-                className="cursor-crosshair"
-                style={{ imageRendering: 'auto' }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 右パネル: データ表示 */}
-        <div className="col-span-3 space-y-4">
-          {/* 現在の面の矩形リスト */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">矩形リスト</h3>
-            {activeFace.wallRects.length === 0 && activeFace.openingRects.length === 0 ? (
-              <p className="text-xs text-gray-400">矩形がありません</p>
             ) : (
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                {activeFace.wallRects.map(r => (
-                  <div key={r.id}
-                    onClick={() => setSelectedRect(r.id)}
-                    className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer ${selectedRect === r.id ? 'bg-green-100' : 'hover:bg-gray-50'}`}>
-                    <span className="text-green-700">{r.label}</span>
-                    <span className="text-gray-400">{Math.round(r.width)}x{Math.round(r.height)}px</span>
-                  </div>
-                ))}
-                {activeFace.openingRects.map(r => (
-                  <div key={r.id}
-                    onClick={() => setSelectedRect(r.id)}
-                    className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer ${selectedRect === r.id ? 'bg-red-100' : 'hover:bg-gray-50'}`}>
-                    <span className="text-red-700">{r.label}</span>
-                    <span className="text-gray-400">{Math.round(r.width)}x{Math.round(r.height)}px</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-gray-600">
+                        <th className="px-4 py-3 text-left font-semibold">方角</th>
+                        <th className="px-4 py-3 text-left font-semibold">計算式</th>
+                        <th className="px-4 py-3 text-right font-semibold">外壁面積 (㎡)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.map(r => (
+                        <tr key={r.face} className="border-t border-gray-100 hover:bg-gray-50">
+                          <td className="px-4 py-3 font-bold text-gray-800">{r.face}側</td>
+                          <td className="px-4 py-3 font-mono text-gray-600 text-xs">
+                            {r.widthM.toFixed(3)} × {r.heightM.toFixed(3)} − {r.windowArea}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <input
+                              type="number"
+                              step="0.001"
+                              value={r.netArea}
+                              onChange={e => {
+                                const val = Number(e.target.value);
+                                setResults(prev => prev.map(pr => pr.face === r.face ? { ...pr, netArea: val } : pr));
+                              }}
+                              className="w-28 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-mono text-right font-bold focus:ring-2 focus:ring-blue-300"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 bg-amber-50">
+                        <td className="px-4 py-3 font-bold text-gray-900" colSpan={2}>合計外壁面積</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-lg text-blue-800">
+                          {results.reduce((s, r) => s + r.netArea, 0).toFixed(3)} ㎡
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
 
-          {/* 面積結果 */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">面積結果</h3>
-            <div className="space-y-2">
-              {faces.map((f, i) => (
-                <div key={f.id} className={`p-2 rounded-lg text-xs ${i === activeFaceIdx ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
-                  <div className="font-semibold text-gray-700">{f.name}</div>
-                  {f.wallAreaM2 > 0 ? (
-                    <div className="mt-1 grid grid-cols-3 gap-1 text-center">
-                      <div><span className="text-gray-400 block">壁面</span><span className="text-green-700 font-mono">{f.wallAreaM2}</span></div>
-                      <div><span className="text-gray-400 block">開口</span><span className="text-red-600 font-mono">{f.openingAreaM2}</span></div>
-                      <div><span className="text-gray-400 block">純面積</span><span className="text-blue-700 font-bold font-mono">{f.netAreaM2}</span></div>
+                {/* 詳細表示 */}
+                <div className="mt-5 grid grid-cols-4 gap-3">
+                  {results.map(r => (
+                    <div key={r.face} className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-xs text-gray-500 mb-1">{r.face}側</div>
+                      <div className="text-xs space-y-0.5">
+                        <div className="flex justify-between"><span className="text-gray-500">横幅</span><span className="font-mono">{r.widthM.toFixed(3)} m</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">軒高さ</span><span className="font-mono">{r.heightM.toFixed(3)} m</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">壁全体</span><span className="font-mono">{r.grossArea.toFixed(3)} ㎡</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">窓面積</span><span className="font-mono text-red-600">−{r.windowArea} ㎡</span></div>
+                        <div className="flex justify-between border-t border-gray-200 pt-1 mt-1">
+                          <span className="text-gray-700 font-semibold">面積</span>
+                          <span className="font-mono font-bold text-blue-700">{r.netArea.toFixed(3)} ㎡</span>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <span className="text-gray-400">未計算</span>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-            {/* 合計 */}
-            {totalNetArea > 0 && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <div className="grid grid-cols-3 gap-1 text-center text-xs">
-                  <div><span className="text-gray-500 block">壁面合計</span><span className="text-green-700 font-bold font-mono text-sm">{totalWallArea.toFixed(2)}</span><span className="text-gray-400"> ㎡</span></div>
-                  <div><span className="text-gray-500 block">開口合計</span><span className="text-red-600 font-bold font-mono text-sm">{totalOpeningArea.toFixed(2)}</span><span className="text-gray-400"> ㎡</span></div>
-                  <div><span className="text-gray-500 block">純面積</span><span className="text-blue-700 font-bold font-mono text-sm">{totalNetArea.toFixed(2)}</span><span className="text-gray-400"> ㎡</span></div>
+
+                {/* 保存ボタン */}
+                <div className="mt-5 flex items-center justify-end gap-3">
+                  <button onClick={runCalculation}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-2">
+                    <Pencil className="w-4 h-4" /> 再計算
+                  </button>
+                  <button onClick={handleSave}
+                    disabled={saved}
+                    className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:bg-green-300 flex items-center gap-2">
+                    {saved ? <><CheckCircle className="w-4 h-4" /> 保存済み</> : <><Save className="w-4 h-4" /> 確定して保存</>}
+                  </button>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* ナビゲーションボタン */}
-      <div className="flex items-center justify-between mt-4">
+      {/* ナビゲーション */}
+      <div className="flex items-center justify-between mt-5">
         <button
-          onClick={() => stepIdx > 0 && setCurrentStep(STEPS[stepIdx - 1].id)}
-          disabled={stepIdx === 0}
+          onClick={() => currentStep > 1 && setCurrentStep(currentStep - 1 as 1|2|3|4|5)}
+          disabled={currentStep === 1}
           className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <ArrowLeft className="w-4 h-4" /> 前のステップ
         </button>
+        <span className="text-xs text-gray-400">Step {currentStep} / 5</span>
         <button
-          onClick={() => stepIdx < STEPS.length - 1 && setCurrentStep(STEPS[stepIdx + 1].id)}
-          disabled={stepIdx === STEPS.length - 1}
+          onClick={() => currentStep < 5 && setCurrentStep(currentStep + 1 as 1|2|3|4|5)}
+          disabled={currentStep === 5}
           className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           次のステップ <ArrowRight className="w-4 h-4" />

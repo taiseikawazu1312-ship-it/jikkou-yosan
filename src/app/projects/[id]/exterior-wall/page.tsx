@@ -515,11 +515,17 @@ export default function ExteriorWallPage() {
           <div className="col-span-8">
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-                <span className="text-sm font-semibold text-gray-700">入力画像：立面図</span>
+                <span className="text-sm font-semibold text-gray-700">
+                  {heightsDetected ? '出力画像：寸法検出結果' : '入力画像：立面図'}
+                </span>
                 <span className="text-xs text-gray-400">立面図＿20251120.pdf</span>
               </div>
               <div className="p-2 bg-slate-50 overflow-auto" style={{ maxHeight: 520 }}>
-                <img src="/demo/elevation.png" alt="立面図" className="w-full h-auto" />
+                <img
+                  src={heightsDetected ? '/demo/elevation.png' : '/demo/elevation-plain.png'}
+                  alt="立面図"
+                  className="w-full h-auto"
+                />
               </div>
             </div>
           </div>

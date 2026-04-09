@@ -1,9 +1,10 @@
-import { Project, ExtractedData, CalculationResult, ExteriorWallData } from './types';
+import { Project, ExtractedData, CalculationResult, ExteriorWallData, BasicQuantitySheet } from './types';
 
 const PROJECTS_KEY = 'jikkou_projects';
 const EXTRACTED_KEY = 'jikkou_extracted';
 const RESULTS_KEY = 'jikkou_results';
 const WALL_KEY = 'jikkou_wall_data';
+const QUANTITY_KEY = 'jikkou_quantity_sheet';
 
 function getFromStorage<T>(key: string): T[] {
   if (typeof window === 'undefined') return [];
@@ -42,18 +43,10 @@ export function saveProject(project: Project): void {
 
 export function deleteProject(id: string): void {
   setToStorage(PROJECTS_KEY, getProjects().filter(p => p.id !== id));
-  setToStorage(
-    EXTRACTED_KEY,
-    getFromStorage<ExtractedData>(EXTRACTED_KEY).filter(
-      (e: ExtractedData) => e.projectId !== id
-    )
-  );
-  setToStorage(
-    RESULTS_KEY,
-    getFromStorage<CalculationResult>(RESULTS_KEY).filter(
-      (r: CalculationResult) => r.projectId !== id
-    )
-  );
+  setToStorage(EXTRACTED_KEY, getFromStorage<ExtractedData>(EXTRACTED_KEY).filter((e: ExtractedData) => e.projectId !== id));
+  setToStorage(RESULTS_KEY, getFromStorage<CalculationResult>(RESULTS_KEY).filter((r: CalculationResult) => r.projectId !== id));
+  setToStorage(WALL_KEY, getFromStorage<ExteriorWallData>(WALL_KEY).filter((w: ExteriorWallData) => w.projectId !== id));
+  setToStorage(QUANTITY_KEY, getFromStorage<BasicQuantitySheet>(QUANTITY_KEY).filter((q: BasicQuantitySheet) => q.projectId !== id));
 }
 
 // Extracted Data
@@ -108,4 +101,22 @@ export function saveExteriorWallData(data: ExteriorWallData): void {
     all.push(data);
   }
   setToStorage(WALL_KEY, all);
+}
+
+// Basic Quantity Sheet
+export function getBasicQuantitySheet(projectId: string): BasicQuantitySheet | undefined {
+  return getFromStorage<BasicQuantitySheet>(QUANTITY_KEY).find(
+    (q: BasicQuantitySheet) => q.projectId === projectId
+  );
+}
+
+export function saveBasicQuantitySheet(sheet: BasicQuantitySheet): void {
+  const all = getFromStorage<BasicQuantitySheet>(QUANTITY_KEY);
+  const index = all.findIndex((q: BasicQuantitySheet) => q.projectId === sheet.projectId);
+  if (index >= 0) {
+    all[index] = sheet;
+  } else {
+    all.push(sheet);
+  }
+  setToStorage(QUANTITY_KEY, all);
 }

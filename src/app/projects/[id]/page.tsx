@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Upload, Brain, Calculator, FileSpreadsheet, CheckCircle, Circle, ArrowLeft, Building2, Square } from 'lucide-react';
+import { Upload, Brain, Calculator, FileSpreadsheet, CheckCircle, Circle, ArrowLeft, Building2, Square, Table2 } from 'lucide-react';
 import { Project, CalculationResult } from '@/lib/types';
-import { getProject, saveProject, getExtractedData, getCalculationResult, saveCalculationResult, getExteriorWallData } from '@/lib/storage';
+import { getProject, saveProject, getExtractedData, getCalculationResult, saveCalculationResult, getExteriorWallData, getBasicQuantitySheet } from '@/lib/storage';
 import { calculateBudget } from '@/lib/calc-engine';
 
 const buildingTypeLabels: Record<Project['buildingType'], string> = {
@@ -43,6 +43,7 @@ export default function ProjectDetailPage() {
   const hasExtractedData = !!getExtractedData(projectId);
   const hasCalcResult = !!calcResult;
   const hasWallData = !!getExteriorWallData(projectId)?.confirmedAt;
+  const hasQuantitySheet = !!getBasicQuantitySheet(projectId);
 
   const handleCalculate = async () => {
     if (!project) return;
@@ -88,22 +89,29 @@ export default function ProjectDetailPage() {
       done: hasWallData,
     },
     {
-      title: '③ 解析結果確認・編集',
+      title: '③ 解析結果確認',
       description: '全数量データ（外壁含む）を確認・修正',
       icon: Brain,
       href: `/projects/${projectId}/analysis`,
       done: hasExtractedData && ['analyzed', 'calculated', 'approved'].includes(project.status),
     },
     {
-      title: '④ 積算計算実行',
-      description: '確認済みデータから予算書を自動計算',
+      title: '④ 数量積算表',
+      description: '基本数量表（93項目）の確認・編集',
+      icon: Table2,
+      href: `/projects/${projectId}/quantity-sheet`,
+      done: hasQuantitySheet,
+    },
+    {
+      title: '⑤ 積算計算実行',
+      description: '数量積算表から予算書を自動計算',
       icon: Calculator,
       href: undefined,
       done: hasCalcResult,
       action: handleCalculate,
     },
     {
-      title: '⑤ 予算書出力',
+      title: '⑥ 予算書出力',
       description: 'Excel出力・承認',
       icon: FileSpreadsheet,
       href: `/projects/${projectId}/budget`,
@@ -149,7 +157,7 @@ export default function ProjectDetailPage() {
 
       {/* ステップカード */}
       <h2 className="text-lg font-semibold text-gray-900 mb-4">ワークフロー</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {steps.map((step, i) => {
           const Icon = step.icon;
           const StepIcon = step.done ? CheckCircle : Circle;

@@ -92,6 +92,62 @@ export interface ExtractedData {
   outerAir2FArea: number; // 外気接触2F床面積
   bedroomCount: number; // 居室数(警報器用)
   accentWallCount: number; // アクセントクロス箇所数
+  // 住友林業基本数量表対応フィールド
+  floorArea3F?: number; // 3階床面積
+  constructionArea?: number; // 施工面積
+  staircaseArea?: number; // 階段室面積
+  tatamiFaceArea?: number; // 畳面積
+  japaneseRoomCount?: number; // 和室箇所数
+  japaneseRoomArea?: number; // 和室床面積
+  storageArea?: number; // 収納・床面積
+  atticArea?: number; // 小屋裏面積
+  voidFloorArea?: number; // 吹抜床面積
+  innerWallLength?: number; // 内壁長
+  totalWallLength?: number; // 全壁長
+  wallIntersectionCount?: number; // 壁交点数
+  roomInsideCornerCount?: number; // 部屋入隅箇所数
+  storageInsideCornerCount?: number; // 収納入隅箇所数
+  exteriorWallPerimeter?: number; // 外壁外周長(m)
+  exteriorWallArea?: number; // 外壁面積(㎡)
+  exteriorWallNetArea?: number; // 外壁実面積(㎡)
+  exteriorWallGrossArea?: number; // 外壁外周長×外壁高の面積
+  exteriorWallOutCornerCount?: number; // 外壁出隅数
+  exteriorWallOutCornerLength?: number; // 外壁出隅長(m)
+  exteriorWallInCornerCount?: number; // 外壁入隅数
+  exteriorWallInCornerLength?: number; // 外壁入隅長(m)
+  exteriorWallInnerArea?: number; // 外壁内面積(㎡)
+  openingPerimeter?: number; // 開口部周長(m)
+  openingWidth?: number; // 開口部長(m) = 幅合計
+  openingArea?: number; // 開口部面積(㎡)
+  floorHeight1F?: number; // 1階階高(m)
+  floorHeight2F?: number; // 2階階高(m)
+  eaveHeight?: number; // 軒高(m)
+  roofArea?: number; // 屋根面積(㎡)
+  roofOutCornerCount?: number; // 屋根出隅数
+  roofInCornerCount?: number; // 屋根入隅数
+  ridgeCount?: number; // 棟箇所数
+  ridgeLength?: number; // 棟長(m)
+  eaveCount?: number; // 軒箇所数
+  eaveLength?: number; // 軒先長(m)
+  soffitArea?: number; // 軒裏面積(㎡)
+  gabledCount?: number; // ケラバ箇所数
+  gabledLength?: number; // ケラバ長(m)
+  gableWallArea?: number; // 矢切壁面積(㎡)
+  flatRoofArea?: number; // フラットルーフ面積(㎡)
+  wingWallCount?: number; // 袖壁箇所数
+  wingWallOutCornerCount?: number; // 袖壁出隅箇所数
+  wingWallOutCornerLength?: number; // 袖壁出隅長(m)
+  wingWallInCornerCount?: number; // 袖壁入隅箇所数
+  wingWallInCornerLength?: number; // 袖壁入隅部分長(m)
+  wingWallFoundationLength?: number; // 袖壁基礎長(m)
+  foundationPerimeter?: number; // 基礎外周長(m)
+  foundationRiseArea?: number; // 基礎立上り面積(㎡)
+  totalRidgeLength?: number; // 総棟長(棟+稜+谷)(m)
+  concreteSlabArea?: number; // 土間コンクリート面積(㎡)
+  exteriorWallRoofOverlapArea?: number; // 外壁・屋根重り面積(㎡)
+  bayWindowCount?: number; // 出窓箇所数
+  bayWindowOpeningLength?: number; // 出窓開口長(m)
+  bayWindowDepth?: number; // 出窓奥行(m)
 }
 
 export interface RoomArea {
@@ -162,6 +218,26 @@ export interface ExteriorWallData {
   totalOpeningArea: number;
   totalNetArea: number;
   confirmedAt?: string;
+}
+
+// 住友林業 基本数量表
+export interface BasicQuantity {
+  id: string;
+  name: string;        // 項目名
+  unit: string;        // 数量単位
+  value1F?: number;    // 1階数量
+  value2F?: number;    // 2階数量
+  value3F?: number;    // 3階数量
+  total?: number;      // 合計数量
+  memo?: string;       // めも
+  source: 'plan' | 'elevation' | 'combined' | 'roof_plan' | 'foundation' | 'na'; // 取得元
+}
+
+// 基本数量表全体
+export interface BasicQuantitySheet {
+  projectId: string;
+  items: BasicQuantity[];
+  calculatedAt: string;
 }
 
 // 計算結果

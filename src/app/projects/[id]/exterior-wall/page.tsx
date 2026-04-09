@@ -7,8 +7,8 @@ import {
   Calculator, CheckCircle, Pencil, Trash2, Plus, Save,
   Loader2,
 } from 'lucide-react';
-import { Project, ExteriorWallData } from '@/lib/types';
-import { getProject, getExteriorWallData, saveExteriorWallData } from '@/lib/storage';
+import { Project, ExteriorWallData, ExtractedData } from '@/lib/types';
+import { getProject, getExteriorWallData, saveExteriorWallData, getExtractedData, saveExtractedData } from '@/lib/storage';
 
 /* ============================
    型定義
@@ -62,55 +62,60 @@ const STEPS = [
 const uid = () => Math.random().toString(36).substring(2, 10);
 
 /* ============================
-   デモデータ（喜田産業サンプル）
+   デモデータ（住友林業モデルプランA）
+   基本数量表: 外壁外周長36.58m, 外壁面積175.58㎡, 開口部面積26.66㎡
    ============================ */
 const DEMO_WIDTHS: FaceWidth[] = [
-  { face: '北', widthMm: 12740 },
-  { face: '南', widthMm: 12740 },
-  { face: '東', widthMm: 11375 },
-  { face: '西', widthMm: 11375 },
+  { face: '北', widthMm: 10010 },
+  { face: '南', widthMm: 10010 },
+  { face: '東', widthMm: 7280 },
+  { face: '西', widthMm: 7280 },
 ];
 
 const DEMO_WINDOWS: FaceWindows[] = [
   {
     face: '北',
     windows: [
-      { id: uid(), room: 'トイレ北側', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
-      { id: uid(), room: '子ども室', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
+      { id: uid(), room: 'トイレ', type: '縦スベリ出し窓', widthMm: 600, heightMm: 500, areaSqm: 0.30 },
+      { id: uid(), room: '子ども室', type: '引違い窓 サーモスX', widthMm: 1650, heightMm: 1300, areaSqm: 2.15 },
+      { id: uid(), room: '洋室1', type: '引違い窓 サーモスX', widthMm: 1650, heightMm: 1300, areaSqm: 2.15 },
     ],
-    totalArea: 1.622,
+    totalArea: 4.60,
   },
   {
     face: '南',
     windows: [
-      { id: uid(), room: '寝室', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
-      { id: uid(), room: 'クローゼット南側', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
-      { id: uid(), room: 'LDK中央', type: '引違い窓', widthMm: 2560, heightMm: 2000, areaSqm: 5.12 },
-      { id: uid(), room: 'LDK東側', type: '引違い窓', widthMm: 2560, heightMm: 2000, areaSqm: 5.12 },
+      { id: uid(), room: 'LDK中央', type: '掃出し窓 サーモスX', widthMm: 1650, heightMm: 2000, areaSqm: 3.30 },
+      { id: uid(), room: 'LDK東側', type: '掃出し窓 サーモスX', widthMm: 1650, heightMm: 2000, areaSqm: 3.30 },
+      { id: uid(), room: '和室', type: '引違い窓 サーモスX', widthMm: 1650, heightMm: 1300, areaSqm: 2.15 },
+      { id: uid(), room: '主寝室', type: '引違い窓 サーモスX', widthMm: 740, heightMm: 1100, areaSqm: 0.81 },
     ],
-    totalArea: 11.862,
+    totalArea: 9.56,
   },
   {
     face: '東',
     windows: [
-      { id: uid(), room: 'タタミコーナー', type: '引違い窓', widthMm: 1600, heightMm: 900, areaSqm: 1.44 },
-      { id: uid(), room: 'ポーチ横', type: '縦スベリ出し窓', widthMm: 260, heightMm: 700, areaSqm: 0.182 },
+      { id: uid(), room: 'LDK', type: '引違い窓 サーモスX', widthMm: 740, heightMm: 1100, areaSqm: 0.81 },
+      { id: uid(), room: '洋室2', type: '引違い窓 サーモスX', widthMm: 740, heightMm: 1100, areaSqm: 0.81 },
+      { id: uid(), room: '玄関ドア', type: 'ジエスタ2', widthMm: 870, heightMm: 2330, areaSqm: 2.03 },
     ],
-    totalArea: 1.622,
+    totalArea: 3.65,
   },
   {
     face: '西',
     windows: [
-      { id: uid(), room: 'ランドリー', type: 'FIX窓', widthMm: 1195, heightMm: 300, areaSqm: 0.3585 },
+      { id: uid(), room: '浴室', type: '縦スベリ出し窓', widthMm: 600, heightMm: 500, areaSqm: 0.30 },
+      { id: uid(), room: '洗面脱衣', type: '引違い窓 サーモスX', widthMm: 740, heightMm: 1100, areaSqm: 0.81 },
+      { id: uid(), room: 'パントリー', type: '縦スベリ出し窓', widthMm: 600, heightMm: 500, areaSqm: 0.30 },
     ],
-    totalArea: 0.3585,
+    totalArea: 1.41,
   },
 ];
 
 const DEMO_HEIGHTS: HeightData = {
-  maxHeight: 4200,
-  eaveHeight: 2850,
-  flToEave: 2810,
+  maxHeight: 7920,     // 最高高さ（棟まで）
+  eaveHeight: 6490,    // 軒高 — 基本数量表
+  flToEave: 4800,      // 1FL−軒高さ（外壁高）
 };
 
 /* ============================
@@ -257,8 +262,12 @@ export default function ExteriorWallPage() {
     setResults(newResults);
   };
 
-  // 保存
+  // 保存 — ExteriorWallData + ExtractedDataの外壁フィールドを同時更新
   const handleSave = () => {
+    const totalWallArea = results.reduce((s, r) => s + r.grossArea, 0);
+    const totalOpeningArea = results.reduce((s, r) => s + r.windowArea, 0);
+    const totalNetArea = results.reduce((s, r) => s + r.netArea, 0);
+
     const faces = results.map(r => ({
       id: uid(),
       name: `${r.face}側`,
@@ -270,16 +279,37 @@ export default function ExteriorWallPage() {
       netAreaM2: r.netArea,
       confirmed: true,
     }));
-    const data: ExteriorWallData = {
+    const wallData: ExteriorWallData = {
       projectId,
       faces,
-      totalWallArea: results.reduce((s, r) => s + r.grossArea, 0),
-      totalOpeningArea: results.reduce((s, r) => s + r.windowArea, 0),
-      totalNetArea: results.reduce((s, r) => s + r.netArea, 0),
+      totalWallArea,
+      totalOpeningArea,
+      totalNetArea,
       confirmedAt: new Date().toISOString(),
     };
-    saveExteriorWallData(data);
+    saveExteriorWallData(wallData);
+
+    // ExtractedDataにも外壁データを反映
+    const extracted = getExtractedData(projectId);
+    if (extracted) {
+      const perimeterM = widths.reduce((s, w) => s + w.widthMm, 0) / 1000;
+      const eaveM = heights.flToEave / 1000;
+      const updated: ExtractedData = {
+        ...extracted,
+        exteriorWallPerimeter: Math.round(perimeterM * 100) / 100,
+        exteriorWallArea: Math.round(totalWallArea * 100) / 100,
+        exteriorWallNetArea: Math.round(totalNetArea * 100) / 100,
+        exteriorWallGrossArea: Math.round(totalWallArea * 100) / 100,
+        openingArea: Math.round(totalOpeningArea * 100) / 100,
+        eaveHeight: Math.round(heights.eaveHeight) / 1000,
+        floorHeight1F: eaveM > 0 ? Math.round(eaveM * 100) / 100 : extracted.floorHeight1F,
+      };
+      saveExtractedData(updated);
+    }
+
     setSaved(true);
+    // 自動遷移: 2秒後にプロジェクト詳細へ
+    setTimeout(() => router.push(`/projects/${projectId}`), 1500);
   };
 
   const totalNet = useMemo(() => results.reduce((s, r) => s + r.netArea, 0), [results]);

@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // スコア計算 & ソート
     const scored: ScoredEstimate[] = allEstimates
-      .map((e) => ({
+      .map((e: any) => ({
         id: e.id,
         projectName: e.projectName,
         buildingType: e.buildingType,

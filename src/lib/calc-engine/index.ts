@@ -1,4 +1,4 @@
-import { Project, ExtractedData, BudgetItem, CalculationResult, BasicQuantity, BasicQuantitySheet, QuickEstimateItem, QuickEstimateResult } from '../types';
+import { Project, ExtractedData, BudgetItem, CalculationResult, BasicQuantity, BasicQuantitySheet, QuickEstimateItem, QuickEstimateResult, QuickEstimateInput } from '../types';
 import { SLOPE_RATES, FIXED_QUANTITIES, ROUNDING_RULES, DEFAULT_UNIT_PRICES } from '../data/constants';
 
 // 端数処理ユーティリティ
@@ -1099,6 +1099,140 @@ export function generateQuickEstimate(project: Project, extracted: ExtractedData
     tsuboUnitPriceMid: tsubo > 0 ? Math.round(totalMid / tsubo) : 0,
     tsuboUnitPriceHigh: tsubo > 0 ? Math.round(totalHigh / tsubo) : 0,
     similarProjectCount: 18,
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
+// ============================================================
+// 図面なし概算見積もり（簡易入力から生成）
+// ============================================================
+
+// グレード別の坪単価係数
+const GRADE_MULTIPLIER = {
+  standard: { low: 0.85, mid: 1.0, high: 1.15 },
+  high: { low: 1.05, mid: 1.25, high: 1.45 },
+  premium: { low: 1.30, mid: 1.55, high: 1.80 },
+};
+
+// 構造別の基本坪単価（万円）
+const STRUCTURE_BASE_PRICE = {
+  '木造': 65,
+  '鉄骨造': 80,
+  'RC造': 95,
+};
+
+// 建物タイプ別の補正係数
+const BUILDING_TYPE_FACTOR = {
+  '平屋': 1.12,     // 基礎・屋根の面積比率が大きい
+  '2階建て': 1.0,   // 基準
+  '3階建て': 1.08,  // 構造補強
+};
+
+export function generateQuickEstimateFromInput(input: QuickEstimateInput): QuickEstimateResult {
+  const tsubo = input.totalFloorAreaTsubo;
+  const basePrice = STRUCTURE_BASE_PRICE[input.structure] || 65;
+  const typeFactor = BUILDING_TYPE_FACTOR[input.buildingType] || 1.0;
+  const gradeMul = GRADE_MULTIPLIER[input.grade];
+
+  // 坪単価を算出（万円）
+  const tsuboLow = Math.round(basePrice * typeFactor * gradeMul.low);
+  const tsuboMid = Math.round(basePrice * typeFactor * gradeMul.mid);
+  const tsuboHigh = Math.round(basePrice * typeFactor * gradeMul.high);
+
+  // 本体工事費
+  const bodyLow = tsuboLow * 10000 * tsubo;
+  const bodyMid = tsuboMid * 10000 * tsubo;
+  const bodyHigh = tsuboHigh * 10000 * tsubo;
+
+  // 概算面積（坪数から推定）
+  const totalArea = tsubo * 3.3124;
+  const area1F = input.buildingType === '平屋' ? totalArea : totalArea * 0.52;
+  const roofArea = area1F * 1.15;  // 軒出・勾配概算
+  const wallArea = Math.sqrt(area1F) * 4 * 5.0 * 0.85; // 外壁概算
+
+  // 工種別に分解
+  const bodyRatios = [
+    { workType: '仮設工事', ratio: 0.04, basis: `延床 ${tsubo}坪` },
+    { workType: '基礎工事', ratio: 0.07, basis: `1F推定面積 ${area1F.toFixed(0)}㎡` },
+    { workType: '躯体工事', ratio: 0.28, basis: `延床 ${tsubo}坪 (${input.structure})` },
+    { workType: '屋根工事', ratio: 0.06, basis: `屋根推定面積 ${roofArea.toFixed(0)}㎡` },
+    { workType: '外壁工事', ratio: 0.10, basis: `外壁推定面積 ${wallArea.toFixed(0)}㎡` },
+    { workType: '建具工事', ratio: 0.06, basis: `延床 ${tsubo}坪` },
+    { workType: '内装工事', ratio: 0.09, basis: `延床 ${tsubo}坪` },
+    { workType: '電気工事', ratio: 0.04, basis: `延床 ${tsubo}坪` },
+    { workType: '給排水設備工事', ratio: 0.06, basis: `延床 ${tsubo}坪` },
+    { workType: '住設機器', ratio: 0.08, basis: `キッチン+UB+洗面+トイレ+給湯器 (${input.grade === 'premium' ? 'ハイグレード' : input.grade === 'high' ? 'ミドルグレード' : '標準'})` },
+    { workType: '断熱工事', ratio: 0.04, basis: `延床 ${tsubo}坪 (省エネ等級6)` },
+    { workType: '防水・板金工事', ratio: 0.025, basis: `バルコニー+軒裏` },
+    { workType: '左官・タイル工事', ratio: 0.015, basis: `基礎巾木+玄関タイル` },
+    { workType: '塗装工事', ratio: 0.01, basis: `内外部塗装一式` },
+    { workType: '雑工事', ratio: 0.01, basis: `クリーニング・美装等` },
+  ];
+
+  const items: QuickEstimateItem[] = [];
+
+  // 本体工事
+  for (const r of bodyRatios) {
+    items.push({
+      category: '本体工事',
+      workType: r.workType,
+      quantity: tsubo,
+      unit: '坪',
+      unitPriceLow: Math.round(bodyLow * r.ratio / tsubo),
+      unitPriceMid: Math.round(bodyMid * r.ratio / tsubo),
+      unitPriceHigh: Math.round(bodyHigh * r.ratio / tsubo),
+      amountLow: Math.round(bodyLow * r.ratio),
+      amountMid: Math.round(bodyMid * r.ratio),
+      amountHigh: Math.round(bodyHigh * r.ratio),
+      ratio: `${(r.ratio * 100).toFixed(0)}%`,
+      source: '過去実績統計',
+      quantityBasis: r.basis,
+    });
+  }
+
+  // 付帯工事（本体の20%目安）
+  const subLow = Math.round(bodyLow * 0.08);
+  const subMid = Math.round(bodyMid * 0.10);
+  const subHigh = Math.round(bodyHigh * 0.15);
+  items.push({
+    category: '付帯工事', workType: '地盤調査・改良',
+    quantity: 1, unit: '式',
+    unitPriceLow: 55000, unitPriceMid: 350000, unitPriceHigh: 800000,
+    amountLow: 55000, amountMid: 350000, amountHigh: 800000,
+    ratio: '1〜5%', source: '過去実績統計', quantityBasis: '地盤調査結果による',
+  });
+  items.push({
+    category: '付帯工事', workType: '外構工事',
+    quantity: 1, unit: '式',
+    unitPriceLow: subLow, unitPriceMid: subMid, unitPriceHigh: subHigh,
+    amountLow: subLow, amountMid: subMid, amountHigh: subHigh,
+    ratio: '5〜10%', source: '過去実績統計', quantityBasis: '本体工事費の8〜15%',
+  });
+
+  // 諸費用（本体の8〜10%）
+  const miscLow = Math.round(bodyLow * 0.06);
+  const miscMid = Math.round(bodyMid * 0.08);
+  const miscHigh = Math.round(bodyHigh * 0.10);
+  items.push({
+    category: '諸費用', workType: '諸費用・申請',
+    quantity: 1, unit: '式',
+    unitPriceLow: miscLow, unitPriceMid: miscMid, unitPriceHigh: miscHigh,
+    amountLow: miscLow, amountMid: miscMid, amountHigh: miscHigh,
+    ratio: '6〜10%', source: '過去実績統計', quantityBasis: '確認申請+検査+保険+登記+ローン手数料',
+  });
+
+  const totalLow = items.reduce((s, i) => s + i.amountLow, 0);
+  const totalMid = items.reduce((s, i) => s + i.amountMid, 0);
+  const totalHigh = items.reduce((s, i) => s + i.amountHigh, 0);
+
+  return {
+    projectId: `est-${Date.now().toString(36)}`,
+    items,
+    totalLow, totalMid, totalHigh,
+    tsuboUnitPriceLow: Math.round(totalLow / tsubo),
+    tsuboUnitPriceMid: Math.round(totalMid / tsubo),
+    tsuboUnitPriceHigh: Math.round(totalHigh / tsubo),
+    similarProjectCount: 24,
     calculatedAt: new Date().toISOString(),
   };
 }

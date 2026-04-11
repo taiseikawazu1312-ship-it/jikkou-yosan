@@ -240,6 +240,18 @@ export interface BasicQuantitySheet {
   calculatedAt: string;
 }
 
+// 概算見積もり — 簡易入力（図面なし）
+export interface QuickEstimateInput {
+  customerName: string;
+  totalFloorAreaTsubo: number;
+  buildingType: '2階建て' | '3階建て' | '平屋';
+  structure: '木造' | '鉄骨造' | 'RC造';
+  grade: 'standard' | 'high' | 'premium';
+  region: string;
+  hasBasement: boolean;
+  memo: string;
+}
+
 // 概算見積もり — 工種別の1行
 export interface QuickEstimateItem {
   category: string;       // 大分類（本体工事/付帯工事/諸費用）

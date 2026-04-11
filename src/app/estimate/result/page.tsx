@@ -24,6 +24,8 @@ export default function EstimateResultPage() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editValue, setEditValue] = useState(0);
   const [activeGrade, setActiveGrade] = useState<'standard' | 'high' | 'premium'>('standard');
+  const [similarOpen, setSimilarOpen] = useState(false);
+  const [similarData, setSimilarData] = useState<any>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -33,6 +35,21 @@ export default function EstimateResultPage() {
     setInput(parsed);
     setActiveGrade(parsed.grade);
     setResult(generateQuickEstimateFromInput(parsed));
+
+    // 類似案件を検索
+    fetch('/api/v1/similar-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        totalFloorAreaTsubo: parsed.totalFloorAreaTsubo,
+        buildingType: parsed.buildingType,
+        structure: parsed.structure,
+        region: parsed.region,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => { if (data.success) setSimilarData(data); })
+      .catch(() => {});
   }, [router]);
 
   // グレード切替
@@ -356,6 +373,56 @@ export default function EstimateResultPage() {
             ))}
           </div>
         </div>
+
+        {/* 類似案件 */}
+        {similarData && similarData.similarEstimates?.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+            <button onClick={() => setSimilarOpen(!similarOpen)} className="w-full flex items-center justify-between p-5 hover:bg-gray-50 transition-colors print:pointer-events-none">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-purple-600" />
+                <h2 className="text-base font-semibold text-gray-900">類似案件（過去実績）</h2>
+                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{similarData.similarEstimates.length}件</span>
+                {similarData.recommended && (
+                  <span className="text-xs text-gray-400 ml-2">推奨坪単価: {fmtMan(similarData.recommended.tsuboUnitPriceMid)}万円</span>
+                )}
+              </div>
+              <span className="print:hidden">{similarOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}</span>
+            </button>
+            {similarOpen && (
+              <div className="border-t border-gray-100 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">案件名</th>
+                      <th className="text-center px-3 py-2 font-medium text-gray-600">タイプ</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600">延床(坪)</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600">坪単価</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600">総額</th>
+                      <th className="text-center px-3 py-2 font-medium text-gray-600">類似度</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {similarData.similarEstimates.slice(0, 8).map((e: any) => (
+                      <tr key={e.id} className="border-b border-gray-100">
+                        <td className="px-4 py-2 text-gray-900">{e.projectName}</td>
+                        <td className="px-3 py-2 text-center text-xs text-gray-500">{e.buildingType}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{e.totalFloorAreaTsubo}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-medium text-blue-700">{fmtMan(e.tsuboUnitPrice)}万</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{fmtMan(e.totalAmount)}万</td>
+                        <td className="px-3 py-2 text-center">
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${Math.round(e.similarityScore * 100)}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-400">{Math.round(e.similarityScore * 100)}%</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 注意事項 */}
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-8">

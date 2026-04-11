@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// === 企業（マルチテナントルート） ===
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  logo      String?
+  plan      String   @default("trial") // trial / starter / professional / enterprise
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users              User[]
+  projects           Project[]
+  historicalEstimates HistoricalEstimate[]
+}
+
+// === ユーザー ===
+model User {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  email     String   @unique
+  password  String   // bcrypt hash
+  role      String   @default("sales") // admin / sales / estimator
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projects Project[]
+}
+
+// === プロジェクト ===
+model Project {
+  id                   String   @id @default(cuid())
+  companyId            String
+  userId               String
+  code                 String   // 工事コード
+  name                 String   // 工事名
+  customerName         String?  // 顧客名
+  buildingType         String   @default("premium") // value / toku_value / premium
+  structure            String   @default("木造")
+  region               String   @default("関東")
+  floorArea1F          Float    @default(0)
+  floorArea2F          Float    @default(0)
+  totalFloorArea       Float    @default(0)
+  floorAreaTsubo1F     Float    @default(0)
+  floorAreaTsubo2F     Float    @default(0)
+  totalFloorAreaTsubo  Float    @default(0)
+  buildingArea         Float    @default(0)
+  siteArea             Float    @default(0)
+  hasGroundImprovement Boolean  @default(false)
+  improvementMethod    String?
+  hasSepticTank        Boolean  @default(false)
+  gasType              String   @default("city")
+  hasPerformanceEval   Boolean  @default(false)
+  exteriorWallQuote    Float?
+  status               String   @default("draft") // draft/uploaded/analyzed/calculated/approved
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extractedData     ExtractedData?
+  exteriorWallData  ExteriorWallData?
+  quantitySheet     BasicQuantitySheet?
+  calculationResult CalculationResult?
+  quickEstimate     QuickEstimate?
+}
+
+// === 図面抽出データ（JSON保存） ===
+model ExtractedData {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  data      String   // JSON: ExtractedData型の全フィールド
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// === 外壁面積データ ===
+model ExteriorWallData {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  data             String   // JSON: faces[], totalWallArea, etc.
+  confirmedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// === 基本数量表 ===
+model BasicQuantitySheet {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  items     String   // JSON: BasicQuantity[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// === 計算結果（実行予算書） ===
+model CalculationResult {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  items          String   // JSON: BudgetItem[]
+  totalAmount    Float    @default(0)
+  tsuboUnitPrice Float    @default(0)
+  sqmUnitPrice   Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// === 概算見積もり結果 ===
+model QuickEstimate {
+  id                   String   @id @default(cuid())
+  projectId            String   @unique
+  items                String   // JSON: QuickEstimateItem[]
+  totalLow             Float    @default(0)
+  totalMid             Float    @default(0)
+  totalHigh            Float    @default(0)
+  tsuboUnitPriceLow    Float    @default(0)
+  tsuboUnitPriceMid    Float    @default(0)
+  tsuboUnitPriceHigh   Float    @default(0)
+  similarProjectCount  Int      @default(0)
+  grade                String   @default("standard")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// === 過去見積り実績（類似案件検索用） ===
+model HistoricalEstimate {
+  id                  String   @id @default(cuid())
+  companyId           String
+  projectName         String
+  customerName        String?
+  buildingType        String   // 2階建て/3階建て/平屋
+  structure           String   // 木造/鉄骨造/RC造
+  region              String
+  totalFloorAreaTsubo Float
+  totalAmount         Int      // 総額（円）
+  bodyAmount          Int?     // 本体工事費（円）
+  tsuboUnitPrice      Int      // 坪単価（円/坪）
+  grade               String?  // standard/high/premium
+  items               String?  // JSON: 工種別内訳
+  completedAt         DateTime // 竣工日・受注日
+  importedAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}

@@ -80,22 +80,22 @@ export async function POST(request: NextRequest) {
         completedAt: e.completedAt.toISOString(),
         similarityScore: calculateSimilarity(e, params),
       }))
-      .sort((a, b) => b.similarityScore - a.similarityScore)
+      .sort((a: ScoredEstimate, b: ScoredEstimate) => b.similarityScore - a.similarityScore)
       .slice(0, limit);
 
     // 推奨単価算出（IQR法で外れ値除外）
-    const prices = scored.map(e => e.tsuboUnitPrice).sort((a, b) => a - b);
+    const prices = scored.map((e: ScoredEstimate) => e.tsuboUnitPrice).sort((a: number, b: number) => a - b);
     const q1 = prices[Math.floor(prices.length * 0.25)] || 0;
     const q3 = prices[Math.floor(prices.length * 0.75)] || 0;
     const iqr = q3 - q1;
-    const filtered = prices.filter(p => p >= q1 - iqr * 1.5 && p <= q3 + iqr * 1.5);
+    const filtered = prices.filter((p: number) => p >= q1 - iqr * 1.5 && p <= q3 + iqr * 1.5);
 
     const recommended = {
       tsuboUnitPriceLow: filtered[0] || 0,
       tsuboUnitPriceMid: filtered[Math.floor(filtered.length / 2)] || 0,
       tsuboUnitPriceHigh: filtered[filtered.length - 1] || 0,
       sampleCount: scored.length,
-      avgTsuboUnitPrice: filtered.length > 0 ? Math.round(filtered.reduce((s, p) => s + p, 0) / filtered.length) : 0,
+      avgTsuboUnitPrice: filtered.length > 0 ? Math.round(filtered.reduce((s: number, p: number) => s + p, 0) / filtered.length) : 0,
     };
 
     return NextResponse.json({

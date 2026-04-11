@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Plus, Trash2, ChevronRight, FileText } from 'lucide-react';
+import { Building2, Plus, Trash2, ChevronRight, FileText, Zap } from 'lucide-react';
 import { Project } from '@/lib/types';
 import { getProjects, deleteProject, saveProject, saveExtractedData } from '@/lib/storage';
 import { createSampleProject, createSampleExtractedData } from '@/lib/calc-engine';
@@ -111,6 +111,28 @@ export default function DashboardPage() {
             <Plus className="w-4 h-4" />
             新規プロジェクト作成
           </button>
+        </div>
+      </div>
+
+      {/* 概算見積もりデモカード */}
+      <div
+        onClick={() => {
+          handleLoadSample();
+          setTimeout(() => router.push('/projects/sample-001/quick-estimate'), 100);
+        }}
+        className="mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-all group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <Zap className="w-6 h-6 text-yellow-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">概算見積もりデモを見る</h2>
+              <p className="text-sm text-blue-200">住友林業モデルプランA — 過去実績ベースの概算見積書を即座に生成</p>
+            </div>
+          </div>
+          <div className="text-white/80 group-hover:translate-x-1 transition-transform text-lg">→</div>
         </div>
       </div>
 

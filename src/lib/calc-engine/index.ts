@@ -1,4 +1,4 @@
-import { Project, ExtractedData, BudgetItem, CalculationResult, BasicQuantity, BasicQuantitySheet } from '../types';
+import { Project, ExtractedData, BudgetItem, CalculationResult, BasicQuantity, BasicQuantitySheet, QuickEstimateItem, QuickEstimateResult } from '../types';
 import { SLOPE_RATES, FIXED_QUANTITIES, ROUNDING_RULES, DEFAULT_UNIT_PRICES } from '../data/constants';
 
 // 端数処理ユーティリティ
@@ -989,6 +989,116 @@ export function createBasicQuantitySheet(project: Project, extracted: ExtractedD
   return {
     projectId: project.id,
     items,
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
+// ============================================================
+// 概算見積もり（Quick Estimate）
+// ============================================================
+
+// 過去実績ベースの単価レンジ（デモ用）
+// 実際にはHistoricalEstimate DBから類似案件を検索して算出
+const DEMO_UNIT_PRICE_RANGES: Record<string, { low: number; mid: number; high: number; unit: string; source: string }> = {
+  '仮設工事':       { low: 28000, mid: 35000, high: 42000, unit: '坪', source: '過去18件の実績' },
+  '基礎工事':       { low: 55000, mid: 68000, high: 82000, unit: '坪', source: '過去15件の実績' },
+  '躯体工事':       { low: 120000, mid: 145000, high: 175000, unit: '坪', source: '過去18件の実績' },
+  '屋根工事':       { low: 4200, mid: 5500, high: 7200, unit: '㎡', source: '過去16件の実績' },
+  '外壁工事':       { low: 7500, mid: 9200, high: 12000, unit: '㎡', source: '過去14件の実績' },
+  '建具工事':       { low: 45000, mid: 58000, high: 75000, unit: '坪', source: '過去18件の実績' },
+  '内装工事':       { low: 32000, mid: 42000, high: 55000, unit: '坪', source: '過去18件の実績' },
+  '電気工事':       { low: 18000, mid: 24000, high: 30000, unit: '坪', source: '過去17件の実績' },
+  '給排水設備工事': { low: 35000, mid: 45000, high: 58000, unit: '坪', source: '過去16件の実績' },
+  '住設機器':       { low: 850000, mid: 1200000, high: 1650000, unit: '式', source: '過去18件の実績' },
+  '断熱工事':       { low: 15000, mid: 22000, high: 30000, unit: '坪', source: '過去14件の実績' },
+  '防水・板金工事': { low: 3500, mid: 4800, high: 6500, unit: '㎡', source: '過去15件の実績' },
+  '左官・タイル工事': { low: 150000, mid: 220000, high: 320000, unit: '式', source: '過去16件の実績' },
+  '塗装工事':       { low: 80000, mid: 120000, high: 180000, unit: '式', source: '過去14件の実績' },
+  '雑工事':         { low: 50000, mid: 80000, high: 120000, unit: '式', source: '過去18件の実績' },
+  '地盤調査・改良': { low: 55000, mid: 350000, high: 800000, unit: '式', source: '過去18件の実績' },
+  '外構工事':       { low: 800000, mid: 1500000, high: 2500000, unit: '式', source: '過去12件の実績' },
+  '諸費用・申請':   { low: 400000, mid: 550000, high: 750000, unit: '式', source: '過去18件の実績' },
+};
+
+export function generateQuickEstimate(project: Project, extracted: ExtractedData): QuickEstimateResult {
+  const tsubo = project.totalFloorAreaTsubo;
+  const roofArea = extracted.roofArea || 86;
+  const wallNetArea = extracted.exteriorWallNetArea || 149;
+  const balconyArea = extracted.balconyArea || 0;
+  const soffitArea = extracted.soffitArea || 13;
+
+  const items: QuickEstimateItem[] = [];
+
+  const addItem = (
+    category: string, workType: string, quantity: number, unit: string,
+    priceKey: string, quantityBasis: string, ratio: string,
+  ) => {
+    const pr = DEMO_UNIT_PRICE_RANGES[priceKey];
+    if (!pr) return;
+    items.push({
+      category, workType, quantity, unit: pr.unit === '式' ? '式' : unit,
+      unitPriceLow: pr.low, unitPriceMid: pr.mid, unitPriceHigh: pr.high,
+      amountLow: Math.round(quantity * pr.low),
+      amountMid: Math.round(quantity * pr.mid),
+      amountHigh: Math.round(quantity * pr.high),
+      ratio, source: pr.source, quantityBasis,
+    });
+  };
+
+  // 本体工事
+  addItem('本体工事', '仮設工事', tsubo, '坪', '仮設工事',
+    `延床面積 ${project.totalFloorArea}㎡ = ${tsubo}坪`, '3〜4%');
+  addItem('本体工事', '基礎工事', tsubo, '坪', '基礎工事',
+    `延床面積 ${tsubo}坪 (1F: ${project.floorArea1F}㎡)`, '6〜8%');
+  addItem('本体工事', '躯体工事', tsubo, '坪', '躯体工事',
+    `延床面積 ${tsubo}坪`, '25〜30%');
+  addItem('本体工事', '屋根工事', roofArea, '㎡', '屋根工事',
+    `屋根面積 ${roofArea}㎡ (勾配${extracted.roofSlope}寸)`, '5〜7%');
+  addItem('本体工事', '外壁工事', wallNetArea, '㎡', '外壁工事',
+    `外壁実面積 ${wallNetArea}㎡ (開口部${extracted.openingArea || 27}㎡控除)`, '8〜12%');
+  addItem('本体工事', '建具工事', tsubo, '坪', '建具工事',
+    `延床面積 ${tsubo}坪 (サッシ${extracted.exteriorFittings.length}種)`, '5〜7%');
+  addItem('本体工事', '内装工事', tsubo, '坪', '内装工事',
+    `延床面積 ${tsubo}坪 (和室${extracted.japaneseRoomCount || 0}室含)`, '7〜10%');
+  addItem('本体工事', '電気工事', tsubo, '坪', '電気工事',
+    `延床面積 ${tsubo}坪 (照明${extracted.lightingCount}箇所)`, '3〜5%');
+  addItem('本体工事', '給排水設備工事', tsubo, '坪', '給排水設備工事',
+    `延床面積 ${tsubo}坪`, '5〜7%');
+  addItem('本体工事', '住設機器', 1, '式', '住設機器',
+    `キッチン+UB+洗面+トイレ×2+給湯器`, '5〜8%');
+  addItem('本体工事', '断熱工事', tsubo, '坪', '断熱工事',
+    `延床面積 ${tsubo}坪 (省エネ等級6相当)`, '3〜5%');
+  addItem('本体工事', '防水・板金工事', balconyArea + soffitArea, '㎡', '防水・板金工事',
+    `バルコニー${balconyArea}㎡ + 軒裏${soffitArea}㎡`, '2〜3%');
+  addItem('本体工事', '左官・タイル工事', 1, '式', '左官・タイル工事',
+    `基礎巾木+玄関タイル`, '1〜2%');
+  addItem('本体工事', '塗装工事', 1, '式', '塗装工事',
+    `内外部塗装一式`, '1〜2%');
+  addItem('本体工事', '雑工事', 1, '式', '雑工事',
+    `クリーニング・美装・残材処分等`, '1%');
+
+  // 付帯工事
+  addItem('付帯工事', '地盤調査・改良', 1, '式', '地盤調査・改良',
+    `地盤調査結果による（改良${project.hasGroundImprovement ? 'あり' : '未定'}）`, '1〜5%');
+  addItem('付帯工事', '外構工事', 1, '式', '外構工事',
+    `敷地面積 ${project.siteArea}㎡`, '5〜10%');
+
+  // 諸費用
+  addItem('諸費用', '諸費用・申請', 1, '式', '諸費用・申請',
+    `確認申請+検査+保険+登記+ローン手数料`, '3〜5%');
+
+  const totalLow = items.reduce((s, i) => s + i.amountLow, 0);
+  const totalMid = items.reduce((s, i) => s + i.amountMid, 0);
+  const totalHigh = items.reduce((s, i) => s + i.amountHigh, 0);
+
+  return {
+    projectId: project.id,
+    items,
+    totalLow, totalMid, totalHigh,
+    tsuboUnitPriceLow: tsubo > 0 ? Math.round(totalLow / tsubo) : 0,
+    tsuboUnitPriceMid: tsubo > 0 ? Math.round(totalMid / tsubo) : 0,
+    tsuboUnitPriceHigh: tsubo > 0 ? Math.round(totalHigh / tsubo) : 0,
+    similarProjectCount: 18,
     calculatedAt: new Date().toISOString(),
   };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Upload, Brain, Calculator, FileSpreadsheet, CheckCircle, Circle, ArrowLeft, Building2, Square, Table2 } from 'lucide-react';
+import { Upload, Brain, Calculator, FileSpreadsheet, CheckCircle, Circle, ArrowLeft, Building2, Square, Table2, Zap } from 'lucide-react';
 import { Project, CalculationResult } from '@/lib/types';
 import { getProject, saveProject, getExtractedData, getCalculationResult, saveCalculationResult, getExteriorWallData, getBasicQuantitySheet } from '@/lib/storage';
 import { calculateBudget } from '@/lib/calc-engine';
@@ -155,8 +155,27 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {/* 概算見積もりカード */}
+      <div
+        onClick={() => router.push(`/projects/${projectId}/quick-estimate`)}
+        className="mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-all group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <Zap className="w-6 h-6 text-yellow-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">概算見積もりを見る</h2>
+              <p className="text-sm text-blue-200">過去実績に基づく概算見積書 — 顧客提示用</p>
+            </div>
+          </div>
+          <div className="text-white/80 group-hover:translate-x-1 transition-transform">→</div>
+        </div>
+      </div>
+
       {/* ステップカード */}
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">ワークフロー</h2>
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">詳細ワークフロー</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {steps.map((step, i) => {
           const Icon = step.icon;

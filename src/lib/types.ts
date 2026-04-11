@@ -240,6 +240,37 @@ export interface BasicQuantitySheet {
   calculatedAt: string;
 }
 
+// 概算見積もり — 工種別の1行
+export interface QuickEstimateItem {
+  category: string;       // 大分類（本体工事/付帯工事/諸費用）
+  workType: string;       // 工事種別
+  quantity: number;       // 数量
+  unit: string;           // 単位
+  unitPriceLow: number;   // 単価（下限）
+  unitPriceHigh: number;  // 単価（上限）
+  unitPriceMid: number;   // 単価（推奨＝中央値）
+  amountLow: number;      // 金額（下限）
+  amountHigh: number;     // 金額（上限）
+  amountMid: number;      // 金額（推奨）
+  ratio: string;          // 費用比率
+  source: string;         // 根拠（「過去12件の実績」等）
+  quantityBasis: string;  // 数量根拠（「基本数量表: 屋根面積=86.32㎡」等）
+}
+
+// 概算見積もり結果
+export interface QuickEstimateResult {
+  projectId: string;
+  items: QuickEstimateItem[];
+  totalLow: number;
+  totalMid: number;
+  totalHigh: number;
+  tsuboUnitPriceLow: number;
+  tsuboUnitPriceMid: number;
+  tsuboUnitPriceHigh: number;
+  similarProjectCount: number; // 参照した類似案件数
+  calculatedAt: string;
+}
+
 // 計算結果
 export interface CalculationResult {
   projectId: string;

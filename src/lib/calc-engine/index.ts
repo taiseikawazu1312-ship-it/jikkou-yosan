@@ -808,7 +808,7 @@ export function createSampleExtractedData(): ExtractedData {
     toilet2FModel: 'ネオレスト RS1',
     waterHeaterModel: 'エコキュート BHP-FV46TD',
     roofMaterial: 'コロニアルグラッサ',
-    wallMaterial: 'シーサンドコート',
+    wallMaterial: '吹付け塗装仕上げ',
     tileMaterial: 'LIXILニューベルニナ 300角',
     wallpaperModel: 'SG-5101',
     lightingFixtures: [

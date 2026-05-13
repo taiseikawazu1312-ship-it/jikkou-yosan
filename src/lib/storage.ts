@@ -6,6 +6,32 @@ const RESULTS_KEY = 'jikkou_results';
 const WALL_KEY = 'jikkou_wall_data';
 const QUANTITY_KEY = 'jikkou_quantity_sheet';
 
+// Schema version. Bump this when sample/seed data shape OR labels change in a
+// way that would make stale localStorage cache surface outdated text to the
+// user (e.g., the 2026-05-13 cleanup that removed identifying company names).
+const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION_KEY = 'jikkou_schema_version';
+
+/**
+ * Wipe any client-side cache from older schema versions. Safe to call on
+ * every app entry — no-ops once the user is on the current version.
+ *
+ * The reason this exists: the demo previously stored projects with the
+ * name '住友林業 モデルプランA' in the browser. After scrubbing the
+ * codebase, returning visitors would still see the old name pulled from
+ * their cached localStorage, defeating the cleanup.
+ */
+export function migrateStorageIfNeeded(): void {
+  if (typeof window === 'undefined') return;
+  const current = localStorage.getItem(SCHEMA_VERSION_KEY);
+  if (current === String(SCHEMA_VERSION)) return;
+
+  [PROJECTS_KEY, EXTRACTED_KEY, RESULTS_KEY, WALL_KEY, QUANTITY_KEY].forEach(
+    (k) => localStorage.removeItem(k)
+  );
+  localStorage.setItem(SCHEMA_VERSION_KEY, String(SCHEMA_VERSION));
+}
+
 function getFromStorage<T>(key: string): T[] {
   if (typeof window === 'undefined') return [];
   try {

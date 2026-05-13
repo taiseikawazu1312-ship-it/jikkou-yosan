@@ -267,7 +267,7 @@ function getDemoData(drawingType: string): Record<string, any> {
       toilet2FModel: 'ネオレスト RS1',
       waterHeaterModel: 'エコキュート BHP-FV46TD',
       roofMaterial: 'コロニアルグラッサ',
-      wallMaterial: 'シーサンドコート',
+      wallMaterial: '吹付け塗装仕上げ',
     },
   };
   return demoData[drawingType] || demoData.plan;

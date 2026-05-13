@@ -642,7 +642,7 @@ export function createDefaultExtractedData(projectId: string): ExtractedData {
     outerAir2FArea: 0,
     bedroomCount: 4,
     accentWallCount: 2,
-    // 住友林業基本数量表対応フィールド（デフォルト空）
+    // 基本数量表対応フィールド（デフォルト空）
     floorArea3F: 0,
     constructionArea: 0,
     staircaseArea: 0,
@@ -699,12 +699,12 @@ export function createDefaultExtractedData(projectId: string): ExtractedData {
   };
 }
 
-// サンプルプロジェクト（住友林業デモ — 木造2階建て住宅）
+// サンプルプロジェクト（デモ — 木造2階建て住宅）
 export function createSampleProject(): Project {
   return {
     id: 'sample-001',
-    code: 'SFC-2026-001',
-    name: '住友林業 モデルプランA — 木造2階建て',
+    code: 'DEMO-2026-001',
+    name: ' モデルプランA — 木造2階建て',
     buildingType: 'premium',
     floorArea1F: 62.93,    // 1階床面積 ㎡
     floorArea2F: 57.96,    // 2階床面積 ㎡
@@ -827,7 +827,7 @@ export function createSampleExtractedData(): ExtractedData {
     outerAir2FArea: 0,
     bedroomCount: 5,
     accentWallCount: 4,
-    // === 住友林業基本数量表対応フィールド（B・C・D・E分類） ===
+    // === 基本数量表対応フィールド（B・C・D・E分類） ===
     floorArea3F: 0,
     constructionArea: 131.65,     // 延床120.89 + バルコニー6.62 + ポーチ4.14
     staircaseArea: 3.31,
@@ -889,7 +889,7 @@ export function createSampleExtractedData(): ExtractedData {
   };
 }
 
-// 基本数量表データ生成（住友林業フォーマット）
+// 基本数量表データ生成（フォーマット）
 export function createBasicQuantitySheet(project: Project, extracted: ExtractedData): BasicQuantitySheet {
   const items: BasicQuantity[] = [
     // 面積系（A分類: 平面図）

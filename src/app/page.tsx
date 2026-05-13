@@ -120,7 +120,7 @@ export default function DashboardPage() {
               </div>
               <div className="flex-1">
                 <h3 className="text-base font-bold text-gray-900">デモを見る（図面あり版）</h3>
-                <p className="text-sm text-gray-500 mt-1">住友林業モデルプラン — AI図面解析 + 過去実績ベース</p>
+                <p className="text-sm text-gray-500 mt-1">標準モデルプラン — AI図面解析 + 過去実績ベース</p>
               </div>
               <div className="text-gray-400 group-hover:translate-x-1 transition-transform">→</div>
             </div>

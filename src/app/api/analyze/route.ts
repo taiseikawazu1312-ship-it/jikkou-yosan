@@ -176,9 +176,9 @@ function getAnalysisPrompt(drawingType: string): string {
 function getDemoData(drawingType: string): Record<string, any> {
   const demoData: Record<string, any> = {
     overview: {
-      buildingName: '住友林業 モデルプランA — 木造2階建て',
+      buildingName: 'モデルプランA — 木造2階建て',
       buildingType: 'プレミアム',
-      structure: '木造（BF構法）',
+      structure: '木造軸組工法',
       floors: 2,
       siteArea: 198.35,
       buildingArea: 64.59,

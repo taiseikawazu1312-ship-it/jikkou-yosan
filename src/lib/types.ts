@@ -92,7 +92,7 @@ export interface ExtractedData {
   outerAir2FArea: number; // 外気接触2F床面積
   bedroomCount: number; // 居室数(警報器用)
   accentWallCount: number; // アクセントクロス箇所数
-  // 住友林業基本数量表対応フィールド
+  // 基本数量表対応フィールド
   floorArea3F?: number; // 3階床面積
   constructionArea?: number; // 施工面積
   staircaseArea?: number; // 階段室面積
@@ -220,7 +220,7 @@ export interface ExteriorWallData {
   confirmedAt?: string;
 }
 
-// 住友林業 基本数量表
+//  基本数量表
 export interface BasicQuantity {
   id: string;
   name: string;        // 項目名

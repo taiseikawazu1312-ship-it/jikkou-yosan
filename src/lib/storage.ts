@@ -13,22 +13,39 @@ const SCHEMA_VERSION = 2;
 const SCHEMA_VERSION_KEY = 'jikkou_schema_version';
 
 /**
- * Wipe any client-side cache from older schema versions. Safe to call on
- * every app entry — no-ops once the user is on the current version.
+ * Replace identifying-company labels (旧住友林業表記) in stored client-side
+ * data with neutralized sample labels. User-created data without those
+ * labels is preserved untouched.
  *
- * The reason this exists: the demo previously stored projects with the
- * name '住友林業 モデルプランA' in the browser. After scrubbing the
- * codebase, returning visitors would still see the old name pulled from
- * their cached localStorage, defeating the cleanup.
+ * Safe to call on every app entry — no-ops once the user is on the
+ * current schema version.
  */
 export function migrateStorageIfNeeded(): void {
   if (typeof window === 'undefined') return;
   const current = localStorage.getItem(SCHEMA_VERSION_KEY);
   if (current === String(SCHEMA_VERSION)) return;
 
-  [PROJECTS_KEY, EXTRACTED_KEY, RESULTS_KEY, WALL_KEY, QUANTITY_KEY].forEach(
-    (k) => localStorage.removeItem(k)
-  );
+  const replacements: Array<[RegExp, string]> = [
+    [/住友林業\s*モデルプラン/g, 'モデルプラン'],
+    [/住友林業/g, ''],
+    [/シーサンドコート/g, '吹付け塗装仕上げ'],
+    [/木造（BF構法）/g, '木造軸組工法'],
+    [/SFC-(\d{4}-\d{3})/g, 'DEMO-$1'],
+  ];
+
+  try {
+    [PROJECTS_KEY, EXTRACTED_KEY, RESULTS_KEY, WALL_KEY, QUANTITY_KEY].forEach((k) => {
+      const raw = localStorage.getItem(k);
+      if (!raw) return;
+      let next = raw;
+      for (const [pattern, replacement] of replacements) {
+        next = next.replace(pattern, replacement);
+      }
+      if (next !== raw) localStorage.setItem(k, next);
+    });
+  } catch {
+    /* ignore — never block app boot on migration failure */
+  }
   localStorage.setItem(SCHEMA_VERSION_KEY, String(SCHEMA_VERSION));
 }
 
